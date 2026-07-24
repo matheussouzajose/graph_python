@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Env
+.env
+.env.local
+
+# Docker
+docker-compose.override.yml
+
+# Media downloads (dev bind mount)
+data/
+output/
+app/output
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Cookies do yt-dlp e outros segredos montados em runtime
+# (ignora tudo em secrets/, menos o arquivo de exemplo)
+secrets/*
+!secrets/cookies.txt.example
