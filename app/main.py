@@ -15,9 +15,12 @@ from .core.infrastructure.database.neo4j import close_driver, setup_schema
 from .core.logger import logger
 from .core.middleware import LoggingMiddleware
 from .features.company.router import router as company_router
+from .features.embeddings.router import router as embeddings_router
+from .features.graph_algorithms.router import router as graph_algorithms_router
 from .features.health.router import router as health_router
 from .features.integration.router import router as integration_router
 from .features.order.router import router as order_router
+from .features.rag.router import router as rag_router
 
 
 @asynccontextmanager
@@ -61,6 +64,9 @@ class App:
         self.__app.include_router(router=company_router, prefix=settings.API_V1_PREFIX)
         self.__app.include_router(router=integration_router, prefix=settings.API_V1_PREFIX)
         self.__app.include_router(router=order_router, prefix=settings.API_V1_PREFIX)
+        self.__app.include_router(router=graph_algorithms_router, prefix=settings.API_V1_PREFIX)
+        self.__app.include_router(router=embeddings_router, prefix=settings.API_V1_PREFIX)
+        self.__app.include_router(router=rag_router, prefix=settings.API_V1_PREFIX)
 
     def __call__(self) -> FastAPI:
         return self.__app

@@ -39,11 +39,18 @@ services:
       - "7687:7687"   # Bolt protocol (usado pelo driver Python)
     environment:
       - NEO4J_AUTH=${NEO4J_USER}/${NEO4J_PASSWORD}
-      - NEO4J_PLUGINS=["graph-data-science"]   # já habilita GDS pra Fase 2
+      - NEO4J_PLUGINS=["graph-data-science","apoc"]
       - NEO4J_dbms_memory_heap_initial__size=2G
       - NEO4J_dbms_memory_heap_max__size=4G
       - NEO4J_dbms_memory_pagecache_size=2G
       - NEO4J_dbms_memory_transaction_total_max=2G
+      # Community Edition não tem RBAC/usuário read-only de verdade, então a
+      # via GLOBAL do Graph RAG (Cypher gerado pelo LLM) roda com o mesmo
+      # usuário admin — este timeout é a defesa de fato contra uma query
+      # gerada sem WHERE (full scan) travando/consumindo recursos.
+      - NEO4J_dbms_transaction_timeout=30s
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*,gds.*
+      - NEO4J_dbms_security_procedures_allowlist=apoc.*,gds.*
     volumes:
       - neo4j_data:/data
       - neo4j_logs:/logs

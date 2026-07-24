@@ -49,6 +49,14 @@ class Settings(BaseSettings):
     OPENAI_EMBEDDING_MODEL: str = Field(
         "text-embedding-3-small", description="OpenAI embedding model for indexing/retrieval."
     )
+    OPENAI_EMBEDDING_DIMENSIONS: int = Field(
+        1536,
+        description=(
+            "Dimensionality requested from OPENAI_EMBEDDING_MODEL and configured on the Neo4j "
+            "vector index — passed explicitly to the embeddings API call so the two can never "
+            "drift out of sync."
+        ),
+    )
 
     # Database
     DBNAME: str = Field("", description="PostgreSQL database name.")
