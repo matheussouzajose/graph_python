@@ -37,7 +37,6 @@ AsyncSessionFactory = async_sessionmaker(
     autoflush=False,
 )
 
-
 async def get_session() -> AsyncIterator[AsyncSession]:
     """Yield a request-scoped session (unit of work).
 

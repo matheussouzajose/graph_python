@@ -3,11 +3,11 @@
 Scalar/queryable fields from the ERP's order document get real columns;
 nested objects/arrays (`customer`, `products`, `address`, `freight`,
 `seller`, `payment`, `summary`) stay as JSONB, since their shape is owned by
-the ERP and not something we query into directly today. `payload` keeps the
-*entire* raw response alongside the structured columns — a safety net in
-case a given order carries fields we haven't modeled (different ERPs/order
-types don't all return the same top-level keys; e.g. Vesti's `status`,
-`unification`, `general_status` show up on some orders but not others).
+the ERP and not something we query into directly today. There is no
+catch-all raw-payload column — every top-level key the ERP sends is
+expected to land in one of these columns. Adding a new ERP field means
+adding a new column here (and a line in `OrderRepository.upsert_many`), not
+falling back to an undifferentiated blob.
 
 `external_created_at`/`external_updated_at`/`expires_at` are stored
 timezone-naive: the ERP sends bare `"YYYY-MM-DD HH:MM:SS"` strings with no
@@ -23,7 +23,7 @@ instead of duplicating it.
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -36,6 +36,9 @@ class OrderORM(Base):
         UniqueConstraint(
             "integration_id", "external_order_id", name="uq_orders_integration_external_id"
         ),
+        # Supports the list endpoint's common query: filter by integration,
+        # order by recency.
+        Index("ix_orders_integration_created_at", "integration_id", "created_at"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -48,7 +51,11 @@ class OrderORM(Base):
     external_company_id: Mapped[UUID] = mapped_column(nullable=False)
     code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     origin: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str | None] = mapped_column(String(255), nullable=True)
     observations: Mapped[str | None] = mapped_column(nullable=True)
+    is_unified: Mapped[bool] = mapped_column(default=False, server_default="false", nullable=False)
+    survey_note: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    survey_comment: Mapped[str | None] = mapped_column(nullable=True)
 
     external_created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=False), nullable=True
@@ -65,8 +72,6 @@ class OrderORM(Base):
     seller: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     payment: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     summary: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-
-    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

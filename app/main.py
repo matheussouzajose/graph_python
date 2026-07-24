@@ -4,12 +4,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from starlette.types import Lifespan
 
 from .core.cache import CacheProtocol
 from .core.config import Settings, settings
 from .core.exceptions import register_exception_handlers
 from .core.infrastructure.cache.cache_service import RedisCacheService
 from .core.infrastructure.database.extensions import enable_vector_extension
+from .core.infrastructure.database.neo4j import close_driver, setup_schema
 from .core.logger import logger
 from .core.middleware import LoggingMiddleware
 from .features.company.router import router as company_router
@@ -21,16 +23,23 @@ from .features.order.router import router as order_router
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await enable_vector_extension()
+    await setup_schema()
     async with AsyncPostgresSaver.from_conn_string(settings.DATABASE_URL) as checkpointer:
         await checkpointer.setup()
         app.state.checkpointer = checkpointer
         logger.info("Checkpointer setup complete", db=settings.DBNAME)
         yield
+        close_driver()
         logger.info("Checkpointer connection closed")
 
 
 class App:
-    def __init__(self, settings: Settings, cache: CacheProtocol | None = None, lifespan=None):
+    def __init__(
+        self,
+        settings: Settings,
+        cache: CacheProtocol | None = None,
+        lifespan: Lifespan[FastAPI] | None = None,
+    ):
         self.settings = settings
         self.__app = FastAPI(**settings.set_app_attributes, lifespan=lifespan)
         self.__app.state.cache = cache
@@ -41,7 +50,7 @@ class App:
         self.__app.add_middleware(
             CORSMiddleware,
             allow_origins=["*"],
-            allow_credentials=True,
+            allow_credentials=False,
             allow_methods=["*"],
             allow_headers=["*"],
         )

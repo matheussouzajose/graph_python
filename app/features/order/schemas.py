@@ -14,7 +14,11 @@ class OrderResponse(BaseModel):
     external_company_id: UUID
     code: int | None
     origin: str | None
+    status: str | None
     observations: str | None
+    is_unified: bool
+    survey_note: int | None
+    survey_comment: str | None
     external_created_at: datetime | None
     external_updated_at: datetime | None
     expires_at: datetime | None
@@ -25,6 +29,10 @@ class OrderResponse(BaseModel):
     seller: dict[str, Any]
     payment: dict[str, Any]
     summary: dict[str, Any]
-    payload: dict[str, Any]
     created_at: datetime
     updated_at: datetime
+
+
+class GraphSyncTriggerResponse(BaseModel):
+    status: str
+    integration_id: UUID | None

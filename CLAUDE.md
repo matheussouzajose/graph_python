@@ -118,13 +118,16 @@ wholesale in logs — it's in `SENSITIVE_KEYS` (`app/core/observability/masking.
 
 **Order sync** (`app/features/order/`, `app/features/integration/erp/`, `app/features/integration/sync_state.py`):
 pulls orders from an integration's ERP into the `orders` table.
-- `order/orm.py` — scalar/queryable fields from the ERP's order document (`external_order_id`,
-  `external_company_id`, `code`, `origin`, `observations`, `external_created_at`/`external_updated_at`/
-  `expires_at`) get real typed columns; nested objects (`customer`, `products`, `address`, `freight`,
-  `seller`, `payment`, `summary`) stay JSONB, since their internal shape is owned by the ERP. `payload`
-  keeps the **entire** raw response alongside the structured columns regardless — different ERPs/order
-  types don't all send the same top-level keys (e.g. Vesti's `status`/`unification`/`general_status`
-  show up on some orders but not others), so nothing modeled explicitly is ever silently lost.
+- `order/orm.py` — every top-level key of the ERP's order document gets its own column: scalars
+  (`external_order_id`, `external_company_id`, `code`, `origin`, `observations`,
+  `external_created_at`/`external_updated_at`/`expires_at`) as real typed columns, nested
+  objects/arrays (`customer`, `products`, `address`, `freight`, `seller`, `payment`, `summary`) as
+  JSONB. **There is no catch-all raw-payload column** — this was a deliberate choice (an earlier version
+  kept the entire raw response alongside the structured columns as a safety net for unmapped fields, but
+  it doubled row size and roughly doubled `GET /orders`'s response time/payload for no benefit the
+  project wanted to keep paying for). The tradeoff: an ERP field that isn't modeled here is now silently
+  dropped rather than recoverable from a raw blob — onboarding a new field means adding a column (and a
+  line in `OrderRepository.upsert_many`), not something automatic.
   `external_created_at`/`external_updated_at`/`expires_at` are stored **timezone-naive** — the ERP sends
   bare `"YYYY-MM-DD HH:MM:SS"` with no offset and the source timezone isn't confirmed yet, so we store
   literally rather than risk asserting a wrong UTC offset. Our own `created_at`/`updated_at` (no
@@ -132,6 +135,8 @@ pulls orders from an integration's ERP into the `orders` table.
 - `order/repository.py::upsert_many` maps each raw order dict's known keys onto these columns (see
   `_parse_dt` for the date parsing) — extending which ERP fields get their own column is a matter of
   adding a column + a line in both the insert values and the `on_conflict_do_update` `set_`.
+- There's a composite index, `ix_orders_integration_created_at (integration_id, created_at)`,
+  supporting the list endpoint's filter-by-integration-order-by-recency query pattern.
 - `integration/erp/base.py` — `ERPClient` (Protocol): `fetch_orders(cursor, page_size) -> OrderPage`.
   `OrderPage.next_cursor` is an **opaque string** owned entirely by the client implementation — the
   engine never parses it, just persists and replays it. This is what lets each provider have a

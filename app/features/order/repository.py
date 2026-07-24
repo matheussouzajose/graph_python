@@ -44,7 +44,11 @@ class OrderRepository:
                 "external_company_id": order.get("company_id"),
                 "code": order.get("code"),
                 "origin": order.get("origin"),
+                "status": order.get("status"),
                 "observations": order.get("observations"),
+                "is_unified": bool((order.get("unification") or {}).get("is_unified", False)),
+                "survey_note": (order.get("survey_answer") or {}).get("note"),
+                "survey_comment": (order.get("survey_answer") or {}).get("comment"),
                 "external_created_at": _parse_dt(order.get("created_at")),
                 "external_updated_at": _parse_dt(order.get("updated_at")),
                 "expires_at": _parse_dt(order.get("expires_at")),
@@ -55,7 +59,6 @@ class OrderRepository:
                 "seller": order.get("seller") or {},
                 "payment": order.get("payment") or {},
                 "summary": order.get("summary") or {},
-                "payload": order,
             }
             for order in orders
         ]
@@ -66,7 +69,11 @@ class OrderRepository:
                 "external_company_id": stmt.excluded.external_company_id,
                 "code": stmt.excluded.code,
                 "origin": stmt.excluded.origin,
+                "status": stmt.excluded.status,
                 "observations": stmt.excluded.observations,
+                "is_unified": stmt.excluded.is_unified,
+                "survey_note": stmt.excluded.survey_note,
+                "survey_comment": stmt.excluded.survey_comment,
                 "external_created_at": stmt.excluded.external_created_at,
                 "external_updated_at": stmt.excluded.external_updated_at,
                 "expires_at": stmt.excluded.expires_at,
@@ -77,7 +84,6 @@ class OrderRepository:
                 "seller": stmt.excluded.seller,
                 "payment": stmt.excluded.payment,
                 "summary": stmt.excluded.summary,
-                "payload": stmt.excluded.payload,
                 "updated_at": func.now(),
             },
         )
