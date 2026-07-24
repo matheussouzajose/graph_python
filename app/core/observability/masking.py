@@ -20,6 +20,7 @@ SENSITIVE_KEYS = {
     "government_id",
     "jwt_secret",
     "transaction-hash-key",
+    "configs",  # integration credentials blob (see features/integration/orm.py)
 }
 
 _MASK = "********"
@@ -63,9 +64,7 @@ def mask_attr(key: str, value: Any) -> Any:
     return value
 
 
-def mask_log_event(
-    _logger: Any, _method: str, event_dict: dict[str, Any]
-) -> dict[str, Any]:
+def mask_log_event(_logger: Any, _method: str, event_dict: dict[str, Any]) -> dict[str, Any]:
     """structlog processor enforcing the privacy invariant on every log signal.
 
     Applies the same masking used for spans/metrics so sensitive values never

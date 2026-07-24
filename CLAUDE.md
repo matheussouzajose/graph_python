@@ -5,9 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project status
 
 This is an early-stage scaffold ("Base de conhecimentos de grafos" / graph knowledge base API) built on
-top of a media-processing project template. `health` and `company` are the only feature slices
-implemented today. Several things referenced by the scaffolding do **not exist yet** in this repo —
-don't assume they do:
+top of a media-processing project template. `health`, `company`, and `integration` are the only feature
+slices implemented today. Several things referenced by the scaffolding do **not exist yet** in this
+repo — don't assume they do:
 
 - There is no `tests/` directory yet, even though `pyproject.toml` sets `testpaths = ["tests"]` and dev
   dependencies include `pytest`/`pytest-asyncio`/`pytest-cov`. **Do not create tests or a `tests/`
@@ -22,13 +22,27 @@ don't assume they do:
   pre-existing module-resolution issue (relative vs. absolute imports mixed across `app/core`), not
   something introduced by any single feature. Not yet fixed; don't treat it as a regression you caused.
 
-When adding a new feature, follow the `app/features/company/` slice shape: `orm.py` (SQLAlchemy model on
-`Base`), `schemas.py` (Pydantic `Create`/`Update`/`Response`), `repository.py` (plain class taking an
-`AsyncSession`, no transaction management, no HTTP/domain concerns — just persistence), `service.py`
-(business logic; translates persistence errors, e.g. `IntegrityError`, into domain exceptions),
-`router.py` (FastAPI `APIRouter` with a `get_<x>_service` dependency). **The router depends on the
-service only — it must never import or call the repository directly**; the service is the sole caller
-of the repository. Endpoints return `Response.model_validate(orm_obj)`. After adding a model:
+When adding a new feature, follow the `app/features/company/` (or `integration/`, which also has an FK)
+slice shape: `orm.py` (SQLAlchemy model on `Base`), `schemas.py` (Pydantic `Create`/`Update`/`Response`),
+`repository.py` (plain class taking an `AsyncSession`, no transaction management, no HTTP/domain
+concerns — just persistence, including lookup methods needed for validation, e.g.
+`get_by_external_company_id`), `service.py` (business logic and **all** validation), `router.py`
+(FastAPI `APIRouter` with a `get_<x>_service` dependency). **The router depends on the service only —
+it must never import or call the repository directly**; the service is the sole caller of the
+repository. Endpoints return `Response.model_validate(orm_obj)`.
+
+**Validation must never be delegated to the database.** Uniqueness, duplicate, and existence checks
+(e.g. "does this `external_company_id` already exist", "does this `company_id` reference a real
+company") are validated explicitly in the service — query first, then raise a domain exception (e.g.
+`CompanyAlreadyExistsError`, `CompanyNotFoundError`) — **before** attempting the write. Do not write
+code whose validation strategy is "attempt the write and catch `IntegrityError`"; the router/service
+must never need to inspect `IntegrityError`/`exc.orig` to decide what went wrong. See
+`company/service.py::create` (checks `get_by_external_company_id` first) and
+`integration/service.py::create` (checks the company exists, then checks
+`get_by_company_and_provider`, both before calling the repository's `create`) as the reference pattern.
+DB-level unique/foreign-key constraints stay in the migrations as a last-resort safety net against
+races/bugs, but they are not, and must not become, the primary validation mechanism. After adding a
+model:
 1. Import its `orm` module in `app/core/infrastructure/database/registry.py` **and**
    `migrations/env.py` (kept in sync manually, per the docstrings in both files).
 2. Include its router in `App.__add_routes` in `app/main.py`.
@@ -90,6 +104,19 @@ once. Import the module-level `settings` singleton directly, or inject `Settings
   doesn't go through the FastAPI app. **Any new feature with an ORM model must be added here.**
 - `extensions.py` — one-off DDL (`CREATE EXTENSION IF NOT EXISTS vector`) run at app startup via the
   `lifespan` in `main.py`, before pgvector-typed columns are used.
+
+**Domain model**: a `company` (`app/features/company/`) can have multiple `integration`s
+(`app/features/integration/`) — one per ERP/external system, FK'd with `ON DELETE CASCADE` (deleting a
+company deletes its integrations). One integration per provider per company: enforced primarily by
+`IntegrationService.create` checking `get_by_company_and_provider` before inserting, backed by a DB
+unique constraint (`uq_integrations_company_provider`) as a safety net — see the validation rule above.
+`provider` is a plain
+string column (not a DB enum) validated at the API boundary via `IntegrationProvider` (a `StrEnum` in
+`integration/schemas.py`); onboarding a new ERP is a code change (add an enum member), not a migration.
+`configs` (credentials) and `params` (non-secret settings) are separate JSONB columns specifically so
+`configs` can be masked wholesale in logs — it's in `SENSITIVE_KEYS`
+(`app/core/observability/masking.py`). The `integration` slice is foundation only: no ERP client/sync
+logic exists yet, just the CRUD + the `vesti` provider placeholder in the enum.
 
 There's also a `langgraph` `AsyncPostgresSaver` checkpointer set up in `main.py`'s `lifespan` and
 stashed on `app.state.checkpointer` — this is the persistence layer for LangGraph agent state, separate

@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 # Add new features here (one import line per feature's orm.py).
 import app.core.infrastructure.messaging.outbox.orm  # noqa: F401,E402
 import app.features.company.orm  # noqa: F401,E402
+import app.features.integration.orm  # noqa: F401,E402
 from app.core.config import settings
 from app.core.infrastructure.database.base import Base
 

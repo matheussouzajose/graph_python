@@ -28,6 +28,10 @@ class CompanyRepository:
     async def get(self, company_id: UUID) -> CompanyORM | None:
         return await self._session.get(CompanyORM, company_id)
 
+    async def get_by_external_company_id(self, external_company_id: UUID) -> CompanyORM | None:
+        stmt = select(CompanyORM).where(CompanyORM.external_company_id == external_company_id)
+        return await self._session.scalar(stmt)
+
     async def list(self, limit: int = 100, offset: int = 0) -> Sequence[CompanyORM]:
         stmt = select(CompanyORM).order_by(CompanyORM.created_at.desc()).limit(limit).offset(offset)
         return (await self._session.scalars(stmt)).all()
