@@ -15,6 +15,4 @@ logger = logging.getLogger(__name__)
 
 class LoggingEventHandler:
     async def handle(self, event: Event) -> None:
-        logger.info(
-            "Event received | name=%s payload=%s", event.name, event.payload
-        )
+        logger.info("Event received | name=%s payload=%s", event.name, event.payload)

@@ -19,3 +19,8 @@ VIDEO_FACE_CROPPED = "video.face_cropped"
 VIDEO_SUBTITLED = "video.subtitled"
 VIDEO_BURNED = "video.burned"
 VIDEO_UPLOADED = "video.uploaded"
+
+# Stream that carries integration lifecycle/command events.
+INTEGRATION_EVENTS_STREAM = "integrations:events"
+
+INTEGRATION_SYNC_REQUESTED = "integration.sync_requested"

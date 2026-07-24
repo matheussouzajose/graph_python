@@ -38,6 +38,11 @@ class IntegrationUpdate(BaseModel):
     is_active: bool | None = None
 
 
+class SyncTriggerResponse(BaseModel):
+    status: str
+    integration_id: UUID
+
+
 class IntegrationResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

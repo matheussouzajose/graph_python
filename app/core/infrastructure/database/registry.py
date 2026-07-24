@@ -12,3 +12,5 @@ Keep this list in sync with `migrations/env.py`.
 import app.core.infrastructure.messaging.outbox.orm  # noqa: F401
 import app.features.company.orm  # noqa: F401
 import app.features.integration.orm  # noqa: F401
+import app.features.integration.sync_state  # noqa: F401
+import app.features.order.orm  # noqa: F401

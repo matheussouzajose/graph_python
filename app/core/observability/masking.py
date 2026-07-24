@@ -13,7 +13,7 @@ SENSITIVE_KEYS = {
     "password",
     "token",
     "secret",
-    "api_key",
+    "apikey",
     "authorization",
     "key",
     "api-key",

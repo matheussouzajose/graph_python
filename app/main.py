@@ -15,6 +15,7 @@ from .core.middleware import LoggingMiddleware
 from .features.company.router import router as company_router
 from .features.health.router import router as health_router
 from .features.integration.router import router as integration_router
+from .features.order.router import router as order_router
 
 
 @asynccontextmanager
@@ -50,6 +51,7 @@ class App:
         self.__app.include_router(router=health_router, prefix=settings.API_V1_PREFIX)
         self.__app.include_router(router=company_router, prefix=settings.API_V1_PREFIX)
         self.__app.include_router(router=integration_router, prefix=settings.API_V1_PREFIX)
+        self.__app.include_router(router=order_router, prefix=settings.API_V1_PREFIX)
 
     def __call__(self) -> FastAPI:
         return self.__app

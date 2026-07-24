@@ -70,9 +70,7 @@ class RedisStreamConsumer:
     async def _ensure_group(self) -> None:
         """Create the consumer group (and the stream) if it doesn't exist."""
         try:
-            await self._client.xgroup_create(
-                self._stream, self._group, id="0", mkstream=True
-            )
+            await self._client.xgroup_create(self._stream, self._group, id="0", mkstream=True)
             logger.info("Created group %s on %s", self._group, self._stream)
         except ResponseError as exc:
             if "BUSYGROUP" not in str(exc):

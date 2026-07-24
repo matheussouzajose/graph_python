@@ -5,9 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project status
 
 This is an early-stage scaffold ("Base de conhecimentos de grafos" / graph knowledge base API) built on
-top of a media-processing project template. `health`, `company`, and `integration` are the only feature
-slices implemented today. Several things referenced by the scaffolding do **not exist yet** in this
-repo — don't assume they do:
+top of a media-processing project template. `health`, `company`, `integration`, and `order` are the only
+feature slices implemented today. Several things referenced by the scaffolding do **not exist yet** in
+this repo — don't assume they do:
 
 - There is no `tests/` directory yet, even though `pyproject.toml` sets `testpaths = ["tests"]` and dev
   dependencies include `pytest`/`pytest-asyncio`/`pytest-cov`. **Do not create tests or a `tests/`
@@ -110,13 +110,91 @@ once. Import the module-level `settings` singleton directly, or inject `Settings
 company deletes its integrations). One integration per provider per company: enforced primarily by
 `IntegrationService.create` checking `get_by_company_and_provider` before inserting, backed by a DB
 unique constraint (`uq_integrations_company_provider`) as a safety net — see the validation rule above.
-`provider` is a plain
-string column (not a DB enum) validated at the API boundary via `IntegrationProvider` (a `StrEnum` in
-`integration/schemas.py`); onboarding a new ERP is a code change (add an enum member), not a migration.
-`configs` (credentials) and `params` (non-secret settings) are separate JSONB columns specifically so
-`configs` can be masked wholesale in logs — it's in `SENSITIVE_KEYS`
-(`app/core/observability/masking.py`). The `integration` slice is foundation only: no ERP client/sync
-logic exists yet, just the CRUD + the `vesti` provider placeholder in the enum.
+`provider` is a plain string column (not a DB enum) validated at the API boundary via
+`IntegrationProvider` (a `StrEnum` in `integration/schemas.py`); onboarding a new ERP is a code change
+(add an enum member + a client), not a migration. `configs` (credentials) and `params` (non-secret
+settings, e.g. `backfill_start_date`) are separate JSONB columns specifically so `configs` can be masked
+wholesale in logs — it's in `SENSITIVE_KEYS` (`app/core/observability/masking.py`).
+
+**Order sync** (`app/features/order/`, `app/features/integration/erp/`, `app/features/integration/sync_state.py`):
+pulls orders from an integration's ERP into the `orders` table.
+- `order/orm.py` — scalar/queryable fields from the ERP's order document (`external_order_id`,
+  `external_company_id`, `code`, `origin`, `observations`, `external_created_at`/`external_updated_at`/
+  `expires_at`) get real typed columns; nested objects (`customer`, `products`, `address`, `freight`,
+  `seller`, `payment`, `summary`) stay JSONB, since their internal shape is owned by the ERP. `payload`
+  keeps the **entire** raw response alongside the structured columns regardless — different ERPs/order
+  types don't all send the same top-level keys (e.g. Vesti's `status`/`unification`/`general_status`
+  show up on some orders but not others), so nothing modeled explicitly is ever silently lost.
+  `external_created_at`/`external_updated_at`/`expires_at` are stored **timezone-naive** — the ERP sends
+  bare `"YYYY-MM-DD HH:MM:SS"` with no offset and the source timezone isn't confirmed yet, so we store
+  literally rather than risk asserting a wrong UTC offset. Our own `created_at`/`updated_at` (no
+  `external_` prefix) are row bookkeeping and stay UTC like every other table.
+- `order/repository.py::upsert_many` maps each raw order dict's known keys onto these columns (see
+  `_parse_dt` for the date parsing) — extending which ERP fields get their own column is a matter of
+  adding a column + a line in both the insert values and the `on_conflict_do_update` `set_`.
+- `integration/erp/base.py` — `ERPClient` (Protocol): `fetch_orders(cursor, page_size) -> OrderPage`.
+  `OrderPage.next_cursor` is an **opaque string** owned entirely by the client implementation — the
+  engine never parses it, just persists and replays it. This is what lets each provider have a
+  completely different pagination scheme without the engine caring.
+- `integration/erp/vesti.py` — `VestiClient`. Vesti's `GET /v1/orders/company/{external_company_id}`
+  only accepts a date range spanning at most one calendar month, so we walk forward in fixed-size
+  windows — `params["window_days"]` (default 28, capped at 31 — Vesti's hard limit) — instead of strict
+  calendar months. The cursor encodes `(window_start, window_end, page)`; **`window_end` is only
+  recomputed when a window is opened fresh** (page 1 — either a brand-new window or resuming a
+  previously parked still-open one), then **frozen** for every subsequent page of that same window.
+  This matters: if `window_end` drifted forward on every page call, later pages of a still-open window
+  would query a subtly different range than earlier ones. Freezing it is what makes backfill and
+  incremental sync **the same loop**: walk window-by-window until caught up, then stay parked on the
+  still-open current window so the next run's frozen `window_end` gets a fresh "now" and picks up newly
+  landed orders. `configs["apikey"]` (header `apikey`) and `params["backfill_start_date"]` are required.
+  `_Cursor.decode` returns `None` for a pre-`window_days` cursor (no `window_end` key) — the caller
+  re-opens that `window_start` fresh under the current `window_days` rather than trying to resume a
+  `page` number that meant something different under the old (month-sized) window; safe because
+  ingestion is idempotent, so any page re-fetched during that just re-upserts, never duplicates. This
+  fallback matters because changing `window_days` (or upgrading the code) doesn't invalidate an
+  in-progress backfill's checkpoint — it just costs a few redundant page fetches once.
+- `integration/erp/factory.py` — `get_erp_client(integration, company)`: the only place mapping
+  `IntegrationProvider` -> concrete client. A second ERP means one new branch + one new client module.
+- `integration/sync_state.py` — `IntegrationSyncStateORM`/`Repository`: the checkpoint, one row per
+  `(integration_id, resource)` (only `resource="orders"` exists). Updated after **every page**, not just
+  at the end — that's what makes a crashed backfill resumable instead of restarting from scratch.
+- `order/repository.py::upsert_many` — bulk `INSERT ... ON CONFLICT DO UPDATE` keyed on
+  `(integration_id, external_order_id)`, one statement per page. This is idempotent *data ingestion*
+  (re-syncing an order overwrites its payload), a different concern from the business-validation rule
+  above — relying on `ON CONFLICT` here is intentional and does not contradict it.
+- `order/sync_engine.py` — `OrderSyncEngine.run(integration_id)`: the provider-agnostic loop (fetch
+  page -> upsert -> save cursor -> repeat while `has_more`). **Each page commits in its own
+  transaction** (`_persist_page` opens/commits its own session per page) — a single long-lived
+  transaction for the whole run would defeat the checkpoint's purpose, since a crash mid-run would roll
+  back everything back to the last commit instead of just losing the one in-flight page.
+  `run_order_sync(integration_id)` is the composition root (looks up the integration + company, builds
+  the ERP client via the factory, wires the engine) — it manages its own sessions throughout; never pass
+  it a request-scoped session, a multi-page sync must not share one HTTP request's transaction.
+
+**Triggering a sync** — two mechanisms exist, both ultimately calling `run_order_sync`:
+- `POST /integrations/{id}/sync` (`integration/router.py`) — publishes an `integration.sync_requested`
+  event to the `integrations:events` Redis Stream (via `get_integration_event_producer`, same
+  `RedisStreamProducer`/`EventProducer` abstraction used for video events) and returns `202`
+  immediately. **Not** a FastAPI `BackgroundTasks` call — publishing to Redis makes the trigger durable
+  across an API restart/redeploy between the request and whenever it actually gets processed, which an
+  in-process background task cannot do. `order/sync_consumer.py` is the consumer side: a
+  `RedisStreamConsumer` (group `"order-sync"`) whose `OrderSyncEventHandler.handle` calls
+  `run_order_sync`. It **must** catch its own exceptions (never re-raise) — this consumer has no
+  dead-letter/reclaim logic for the pending-entries list, so leaving a message unacked would strand it
+  forever rather than retry it; a failed sync is logged and acked, and the next periodic
+  `OrderSyncWorker` round (or another manual trigger) will pick the integration back up from its last
+  checkpoint anyway. Run it as its own process: `uv run python -m app.features.order.sync_consumer`.
+- `OrderSyncWorker` (`order/sync_worker.py`) — a standalone loop mirroring `OutboxRelay`'s `run()`/
+  `stop()` shape: every `poll_interval` seconds, lists all active integrations
+  (`IntegrationRepository.list_active`) and runs a sync for each; one integration's failure is logged
+  and skipped, never stops the round. Runs as its own process: `uv run python -m
+  app.features.order.sync_worker`.
+- Neither is started by `docker compose` or anywhere else automatically — wiring `sync_worker.py` and
+  `sync_consumer.py` into `docker-compose.yml` as their own services is the natural next step if/when
+  they're needed continuously, but that hasn't been done.
+- Both are safe to run concurrently against the same integration (e.g. a manual trigger while the
+  worker's round is also due) since progress is checkpointed per page regardless of caller — worst case
+  is redundant work on whichever page is in flight, not corruption.
 
 There's also a `langgraph` `AsyncPostgresSaver` checkpointer set up in `main.py`'s `lifespan` and
 stashed on `app.state.checkpointer` — this is the persistence layer for LangGraph agent state, separate
@@ -142,7 +220,7 @@ the interface; `RedisCacheService` is the only implementation, instantiated once
 - `app/core/logger.py` configures `structlog` routed through stdlib logging: JSON output in
   non-debug environments (for log pipelines), human-readable `ConsoleRenderer` when `IS_DEBUG=True`.
 - `app/core/observability/masking.py` is the single source of truth for redacting sensitive fields
-  (`password`, `token`, `secret`, `api_key`, `government_id`, etc.) from logs — applied both as a
+  (`password`, `token`, `secret`, `apikey`, `government_id`, etc.) from logs — applied both as a
   structlog processor (`mask_log_event`) and directly by `LoggingMiddleware`. Add new sensitive key
   names to `SENSITIVE_KEYS` here, not ad hoc at call sites.
 - `app/core/middleware.py`'s `LoggingMiddleware` logs masked request/response bodies and timing for

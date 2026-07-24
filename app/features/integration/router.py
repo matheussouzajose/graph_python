@@ -5,12 +5,16 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.infrastructure.database.session import get_session
+from app.core.infrastructure.messaging.base import Event
+from app.core.infrastructure.messaging.client import get_integration_event_producer
+from app.core.infrastructure.messaging.events import INTEGRATION_SYNC_REQUESTED
 from app.features.company.repository import CompanyRepository
 from app.features.integration.repository import IntegrationRepository
 from app.features.integration.schemas import (
     IntegrationCreate,
     IntegrationResponse,
     IntegrationUpdate,
+    SyncTriggerResponse,
 )
 from app.features.integration.service import (
     CompanyNotFoundError,
@@ -78,3 +82,34 @@ async def delete_integration(integration_id: UUID, service: ServiceDep) -> None:
     deleted = await service.delete(integration_id)
     if not deleted:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Integration not found")
+
+
+@router.post(
+    "/{integration_id}/sync",
+    response_model=SyncTriggerResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def trigger_integration_sync(
+    integration_id: UUID, service: ServiceDep
+) -> SyncTriggerResponse:
+    """Publishes a sync request to Redis and returns immediately.
+
+    Durable and decoupled from this process: unlike an in-process background
+    task, the trigger survives an API restart/redeploy between the request
+    and the moment `order/sync_consumer.py` actually picks it up and calls
+    `run_order_sync`. Progress is checkpointed per page regardless of who
+    ends up running it (this trigger or `OrderSyncWorker`'s periodic poll),
+    so re-triggering mid-run just resumes from the last saved cursor.
+    """
+    integration = await service.get(integration_id)
+    if integration is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Integration not found")
+
+    producer = get_integration_event_producer()
+    await producer.publish(
+        Event(
+            name=INTEGRATION_SYNC_REQUESTED,
+            payload={"integration_id": str(integration_id)},
+        )
+    )
+    return SyncTriggerResponse(status="accepted", integration_id=integration_id)

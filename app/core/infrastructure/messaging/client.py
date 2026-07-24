@@ -9,7 +9,10 @@ from functools import lru_cache
 from redis.asyncio import Redis
 
 from app.core.config import settings
-from app.core.infrastructure.messaging.events import VIDEO_EVENTS_STREAM
+from app.core.infrastructure.messaging.events import (
+    INTEGRATION_EVENTS_STREAM,
+    VIDEO_EVENTS_STREAM,
+)
 from app.core.infrastructure.messaging.redis_stream import RedisStreamProducer
 
 
@@ -32,3 +35,8 @@ def get_redis_client() -> Redis:
 @lru_cache
 def get_video_event_producer() -> RedisStreamProducer:
     return RedisStreamProducer(get_redis_client(), VIDEO_EVENTS_STREAM)
+
+
+@lru_cache
+def get_integration_event_producer() -> RedisStreamProducer:
+    return RedisStreamProducer(get_redis_client(), INTEGRATION_EVENTS_STREAM)

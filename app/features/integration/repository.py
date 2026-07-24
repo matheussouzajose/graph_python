@@ -58,6 +58,10 @@ class IntegrationRepository:
             stmt = stmt.where(IntegrationORM.company_id == company_id)
         return (await self._session.scalars(stmt)).all()
 
+    async def list_active(self) -> Sequence[IntegrationORM]:
+        stmt = select(IntegrationORM).where(IntegrationORM.is_active.is_(True))
+        return (await self._session.scalars(stmt)).all()
+
     async def update(self, integration_id: UUID, data: IntegrationUpdate) -> IntegrationORM | None:
         integration = await self.get(integration_id)
         if integration is None:

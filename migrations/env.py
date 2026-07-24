@@ -19,6 +19,8 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 import app.core.infrastructure.messaging.outbox.orm  # noqa: F401,E402
 import app.features.company.orm  # noqa: F401,E402
 import app.features.integration.orm  # noqa: F401,E402
+import app.features.integration.sync_state  # noqa: F401,E402
+import app.features.order.orm  # noqa: F401,E402
 from app.core.config import settings
 from app.core.infrastructure.database.base import Base
 

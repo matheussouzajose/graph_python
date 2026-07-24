@@ -79,6 +79,62 @@ services:
       redis:
         condition: service_healthy
 
+  # order-sync-worker:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   image: oraculo-graph-api:latest
+  #   container_name: oraculo-graph-order-sync-worker
+  #   restart: unless-stopped
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     - ENVIRONMENT=${ENVIRONMENT:-production}
+  #     - REDIS_HOST=${REDIS_HOST:-redis}
+  #     - DB_HOST=${DB_HOST:-postgres}
+  #     - DB_PORT=${DB_PORT:-5432}
+  #   # Periodic poller: syncs every active integration on a fixed interval.
+  #   # No HTTP server in this container, so the image's baked-in HEALTHCHECK
+  #   # (hits :8000/health) doesn't apply — disabled below.
+  #   command: ["python", "-m", "app.features.order.sync_worker"]
+  #   healthcheck:
+  #     disable: true
+  #   volumes:
+  #     - ./app:/app/app
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+
+  order-sync-consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: oraculo-graph-api:latest
+    container_name: oraculo-graph-order-sync-consumer
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=${DB_PORT:-5432}
+    # Consumes integration.sync_requested events from Redis (published by
+    # POST /integrations/{id}/sync) — without this running, that endpoint's
+    # trigger sits in the stream unprocessed.
+    command: ["python", "-m", "app.features.order.sync_consumer"]
+    healthcheck:
+      disable: true
+    volumes:
+      - ./app:/app/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 volumes:
   pgdata:
   redis_data:
