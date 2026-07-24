@@ -9,8 +9,5 @@ registered. Importing this module once makes the metadata complete.
 Keep this list in sync with `migrations/env.py`.
 """
 
-import app.features.auth.orm  # noqa: F401
-import app.features.processing.orm  # noqa: F401
-import app.features.videos.orm  # noqa: F401
-
 import app.core.infrastructure.messaging.outbox.orm  # noqa: F401
+import app.features.company.orm  # noqa: F401

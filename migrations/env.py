@@ -17,9 +17,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 # Import every ORM model so Base.metadata knows about its table.
 # Add new features here (one import line per feature's orm.py).
 import app.core.infrastructure.messaging.outbox.orm  # noqa: F401,E402
-import app.features.auth.orm  # noqa: F401,E402
-import app.features.processing.orm  # noqa: F401,E402
-import app.features.videos.orm  # noqa: F401,E402
+import app.features.company.orm  # noqa: F401,E402
 from app.core.config import settings
 from app.core.infrastructure.database.base import Base
 
