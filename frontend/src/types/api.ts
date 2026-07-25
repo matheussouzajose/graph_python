@@ -161,6 +161,76 @@ export interface IntegrationUpdateInput {
   is_active?: boolean
 }
 
+// Um dos 12 arquétipos junguianos de marca (ver docs/arquetipos-de-marca.md
+// e app/features/brand_archetype/schemas.py::BrandArchetype).
+export type BrandArchetype =
+  | 'innocent'
+  | 'explorer'
+  | 'sage'
+  | 'hero'
+  | 'outlaw'
+  | 'magician'
+  | 'everyman'
+  | 'jester'
+  | 'lover'
+  | 'ruler'
+  | 'creator'
+  | 'caregiver'
+
+export interface BrandVoice {
+  tone: string[]
+  sentence_style: string | null
+  vocabulary_prefer: string[]
+  vocabulary_avoid: string[]
+}
+
+export interface BrandAudience {
+  who: string | null
+  speaks_to_them_as: string | null
+}
+
+export interface BrandGuardrails {
+  do: string[]
+  dont: string[]
+}
+
+export interface BrandArchetypeProfile {
+  id: string
+  company_id: string
+  primary_archetype: BrandArchetype
+  secondary_archetype: BrandArchetype | null
+  archetype_scores: Record<string, number>
+  core_desire: string | null
+  fear: string | null
+  strategy: string | null
+  voice: BrandVoice
+  audience: BrandAudience
+  messaging_pillars: string[]
+  guardrails: BrandGuardrails
+  reference_examples: string[]
+  created_at: string
+  updated_at: string
+}
+
+export interface BrandArchetypeProfileCreateInput {
+  company_id: string
+  primary_archetype: BrandArchetype
+  secondary_archetype?: BrandArchetype | null
+  core_desire?: string | null
+  fear?: string | null
+  strategy?: string | null
+  voice?: Partial<BrandVoice>
+  audience?: Partial<BrandAudience>
+  messaging_pillars?: string[]
+  guardrails?: Partial<BrandGuardrails>
+  reference_examples?: string[]
+}
+
+export type BrandArchetypeProfileUpdateInput = Omit<
+  BrandArchetypeProfileCreateInput,
+  'company_id'
+>
+
 export interface Order {
   id: string
   integration_id: string

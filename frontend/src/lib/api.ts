@@ -1,6 +1,9 @@
 import type {
   AskResponse,
   BoughtTogetherPair,
+  BrandArchetypeProfile,
+  BrandArchetypeProfileCreateInput,
+  BrandArchetypeProfileUpdateInput,
   ChatHistory,
   ChatSession,
   Company,
@@ -143,6 +146,28 @@ export const updateIntegration = (integrationId: string, data: IntegrationUpdate
 
 export const deleteIntegration = (integrationId: string) =>
   request<void>(`/integrations/${integrationId}`, { method: 'DELETE' })
+
+// Arquétipo de marca
+export const getBrandArchetypeProfiles = () =>
+  request<BrandArchetypeProfile[]>('/brand-archetype-profiles')
+
+export const createBrandArchetypeProfile = (data: BrandArchetypeProfileCreateInput) =>
+  request<BrandArchetypeProfile>('/brand-archetype-profiles', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
+export const updateBrandArchetypeProfile = (
+  profileId: string,
+  data: BrandArchetypeProfileUpdateInput,
+) =>
+  request<BrandArchetypeProfile>(`/brand-archetype-profiles/${profileId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+
+export const deleteBrandArchetypeProfile = (profileId: string) =>
+  request<void>(`/brand-archetype-profiles/${profileId}`, { method: 'DELETE' })
 
 // Pedidos
 export const getOrders = (filters: OrderFilterParams = {}, limit = 50, offset = 0) =>

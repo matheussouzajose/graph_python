@@ -1,11 +1,25 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { deleteIntegration, getCompanies, getIntegrations, updateIntegration } from '@/lib/api'
-import type { IntegrationUpdateInput } from '@/types/api'
+import {
+  createBrandArchetypeProfile,
+  deleteBrandArchetypeProfile,
+  deleteIntegration,
+  getBrandArchetypeProfiles,
+  getCompanies,
+  getIntegrations,
+  updateBrandArchetypeProfile,
+  updateIntegration,
+} from '@/lib/api'
+import type {
+  BrandArchetypeProfileCreateInput,
+  BrandArchetypeProfileUpdateInput,
+  IntegrationUpdateInput,
+} from '@/types/api'
 
 export const catalogKeys = {
   companies: ['catalog', 'companies'] as const,
   integrations: ['catalog', 'integrations'] as const,
+  brandArchetypeProfiles: ['catalog', 'brand-archetype-profiles'] as const,
 }
 
 export function useCompanies() {
@@ -40,5 +54,52 @@ export function useDeleteIntegration() {
     },
     onError: (error: Error) =>
       toast.error('Falha ao remover integração', { description: error.message }),
+  })
+}
+
+export function useBrandArchetypeProfiles() {
+  return useQuery({
+    queryKey: catalogKeys.brandArchetypeProfiles,
+    queryFn: getBrandArchetypeProfiles,
+  })
+}
+
+export function useCreateBrandArchetypeProfile() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (data: BrandArchetypeProfileCreateInput) => createBrandArchetypeProfile(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: catalogKeys.brandArchetypeProfiles })
+      toast.success('Arquétipo de marca criado')
+    },
+    onError: (error: Error) =>
+      toast.error('Falha ao criar arquétipo de marca', { description: error.message }),
+  })
+}
+
+export function useUpdateBrandArchetypeProfile() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: BrandArchetypeProfileUpdateInput }) =>
+      updateBrandArchetypeProfile(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: catalogKeys.brandArchetypeProfiles })
+      toast.success('Arquétipo de marca atualizado')
+    },
+    onError: (error: Error) =>
+      toast.error('Falha ao atualizar arquétipo de marca', { description: error.message }),
+  })
+}
+
+export function useDeleteBrandArchetypeProfile() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => deleteBrandArchetypeProfile(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: catalogKeys.brandArchetypeProfiles })
+      toast.success('Arquétipo de marca removido')
+    },
+    onError: (error: Error) =>
+      toast.error('Falha ao remover arquétipo de marca', { description: error.message }),
   })
 }

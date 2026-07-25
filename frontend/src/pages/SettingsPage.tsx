@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Clock,
   Database,
+  Fingerprint,
   Loader2,
   Pencil,
   Play,
@@ -31,6 +32,13 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -38,14 +46,19 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Textarea } from '@/components/ui/textarea'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { RelativeTime } from '@/components/shared/RelativeTime'
 import { SectionCard } from '@/components/shared/SectionCard'
 import {
+  useBrandArchetypeProfiles,
   useCompanies,
+  useCreateBrandArchetypeProfile,
+  useDeleteBrandArchetypeProfile,
   useDeleteIntegration,
   useIntegrations,
+  useUpdateBrandArchetypeProfile,
   useUpdateIntegration,
 } from '@/hooks/use-catalog'
 import { useSyncStatus } from '@/hooks/use-dashboard'
@@ -56,7 +69,15 @@ import {
   useSyncIntegrationAction,
 } from '@/hooks/use-actions'
 import { formatDateTime } from '@/lib/format'
-import type { Integration, IntegrationSyncStatus } from '@/types/api'
+import { archetypeLabel, BRAND_ARCHETYPES } from '@/lib/brand-archetypes'
+import type {
+  BrandArchetype,
+  BrandArchetypeProfile,
+  BrandArchetypeProfileCreateInput,
+  Company,
+  Integration,
+  IntegrationSyncStatus,
+} from '@/types/api'
 
 type KeyValueType = 'string' | 'number' | 'boolean' | 'json' | 'null'
 
@@ -150,6 +171,7 @@ export function SettingsPage() {
         <TabsList>
           <TabsTrigger value="company">Empresa</TabsTrigger>
           <TabsTrigger value="integrations">Integrações</TabsTrigger>
+          <TabsTrigger value="brand-archetype">Arquétipo de marca</TabsTrigger>
         </TabsList>
 
         <TabsContent value="company" className="mt-4">
@@ -186,6 +208,10 @@ export function SettingsPage() {
 
         <TabsContent value="integrations" className="mt-4">
           <IntegrationsSettings integrations={integrations.data} loading={integrations.isLoading} />
+        </TabsContent>
+
+        <TabsContent value="brand-archetype" className="mt-4">
+          <BrandArchetypeSettings company={company} companyLoading={companies.isLoading} />
         </TabsContent>
       </Tabs>
     </div>
@@ -668,5 +694,529 @@ function KeyValueEditor({
         ))}
       </div>
     </section>
+  )
+}
+
+function linesToArray(value: string): string[] {
+  return value
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+}
+
+function arrayToLines(value: string[] | undefined): string {
+  return (value ?? []).join('\n')
+}
+
+const NO_SECONDARY_ARCHETYPE = 'none'
+
+function BrandArchetypeSettings({
+  company,
+  companyLoading,
+}: {
+  company: Company | undefined
+  companyLoading?: boolean
+}) {
+  const profiles = useBrandArchetypeProfiles()
+  const deleteProfile = useDeleteBrandArchetypeProfile()
+  const [editingOpen, setEditingOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  const profile = profiles.data?.[0]
+  const loading = companyLoading || profiles.isLoading
+
+  return (
+    <>
+      <SectionCard
+        title="Arquétipo de marca"
+        description="Personalidade e voz da marca — contexto reutilizado pelos futuros agentes de conteúdo (Oráculo Marketing, roteiro/vídeo)."
+        icon={Fingerprint}
+        actions={
+          company ? (
+            <div className="flex items-center gap-2">
+              {profile ? (
+                <Button variant="destructive" size="sm" onClick={() => setDeleting(true)}>
+                  <Trash2 className="size-4" />
+                  Excluir
+                </Button>
+              ) : null}
+              <Button size="sm" onClick={() => setEditingOpen(true)}>
+                {profile ? <Pencil className="size-4" /> : <Plus className="size-4" />}
+                {profile ? 'Editar' : 'Criar perfil'}
+              </Button>
+            </div>
+          ) : null
+        }
+      >
+        {loading ? (
+          <div className="h-40 animate-pulse rounded-lg bg-muted" />
+        ) : !company ? (
+          <EmptyState
+            title="Empresa não encontrada"
+            description="É preciso ter uma empresa ativa para configurar o arquétipo de marca."
+          />
+        ) : !profile ? (
+          <EmptyState
+            icon={Fingerprint}
+            title="Nenhum arquétipo definido"
+            description="Defina o arquétipo primário/secundário, voz, público e diretrizes de conteúdo desta marca."
+          />
+        ) : (
+          <BrandArchetypeProfileView profile={profile} />
+        )}
+      </SectionCard>
+
+      <BrandArchetypeProfileSheet
+        open={editingOpen}
+        company={company ?? null}
+        profile={profile ?? null}
+        onClose={() => setEditingOpen(false)}
+      />
+
+      <Dialog open={deleting} onOpenChange={setDeleting}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excluir arquétipo de marca</DialogTitle>
+            <DialogDescription>
+              Remove o perfil de arquétipo desta empresa. Pode ser recriado depois.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleting(false)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleteProfile.isPending}
+              onClick={() => {
+                if (!profile) return
+                deleteProfile.mutate(profile.id, { onSuccess: () => setDeleting(false) })
+              }}
+            >
+              {deleteProfile.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Trash2 className="size-4" />
+              )}
+              Excluir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
+function BrandArchetypeProfileView({ profile }: { profile: BrandArchetypeProfile }) {
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <InfoTile label="Arquétipo primário" value={archetypeLabel(profile.primary_archetype)} />
+        <InfoTile
+          label="Arquétipo secundário"
+          value={archetypeLabel(profile.secondary_archetype)}
+        />
+        <InfoTile label="Atualizado" value={<RelativeTime value={profile.updated_at} />} />
+        <InfoTile label="Desejo central" value={profile.core_desire || '—'} />
+        <InfoTile label="Medo" value={profile.fear || '—'} />
+        <InfoTile label="Estratégia" value={profile.strategy || '—'} />
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <section className="space-y-3 rounded-lg border bg-card p-3 shadow-sm">
+          <h3 className="text-sm font-medium">Voz</h3>
+          <div className="space-y-2 text-xs">
+            <div>
+              <p className="mb-1 font-medium text-muted-foreground">Tom</p>
+              <TagList items={profile.voice.tone} />
+            </div>
+            <InfoRow label="Estilo de frase" value={profile.voice.sentence_style} />
+            <div>
+              <p className="mb-1 font-medium text-muted-foreground">Vocabulário preferido</p>
+              <TagList items={profile.voice.vocabulary_prefer} tone="positive" />
+            </div>
+            <div>
+              <p className="mb-1 font-medium text-muted-foreground">Vocabulário a evitar</p>
+              <TagList items={profile.voice.vocabulary_avoid} tone="negative" />
+            </div>
+          </div>
+        </section>
+
+        <section className="space-y-3 rounded-lg border bg-card p-3 shadow-sm">
+          <h3 className="text-sm font-medium">Público</h3>
+          <div className="space-y-2 text-xs">
+            <InfoRow label="Quem é" value={profile.audience.who} />
+            <InfoRow label="Como a marca fala com ele" value={profile.audience.speaks_to_them_as} />
+          </div>
+          <h3 className="pt-2 text-sm font-medium">Pilares de mensagem</h3>
+          <ListBlock items={profile.messaging_pillars} />
+        </section>
+
+        <section className="space-y-3 rounded-lg border bg-card p-3 shadow-sm">
+          <h3 className="text-sm font-medium">Pode</h3>
+          <ListBlock items={profile.guardrails.do} />
+        </section>
+
+        <section className="space-y-3 rounded-lg border bg-card p-3 shadow-sm">
+          <h3 className="text-sm font-medium">Não pode</h3>
+          <ListBlock items={profile.guardrails.dont} />
+        </section>
+      </div>
+
+      <section className="space-y-2 rounded-lg border bg-card p-3 shadow-sm">
+        <h3 className="text-sm font-medium">Exemplos de referência</h3>
+        {profile.reference_examples.length === 0 ? (
+          <p className="text-xs text-muted-foreground">—</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {profile.reference_examples.map((example) => (
+              <li key={example} className="text-xs italic text-muted-foreground">
+                “{example}”
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  )
+}
+
+function InfoRow({ label, value }: { label: string; value: string | null }) {
+  return (
+    <p>
+      <span className="font-medium text-muted-foreground">{label}: </span>
+      {value || '—'}
+    </p>
+  )
+}
+
+function ListBlock({ items }: { items: string[] }) {
+  if (items.length === 0) return <p className="text-xs text-muted-foreground">—</p>
+  return (
+    <ul className="space-y-1 text-xs">
+      {items.map((item) => (
+        <li key={item} className="flex gap-1.5">
+          <span className="text-muted-foreground">•</span>
+          <span>{item}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function TagList({ items, tone }: { items: string[]; tone?: 'positive' | 'negative' }) {
+  if (items.length === 0) return <p className="text-xs text-muted-foreground">—</p>
+  const className =
+    tone === 'positive'
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-400'
+      : tone === 'negative'
+        ? 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-400'
+        : undefined
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {items.map((item) => (
+        <Badge key={item} variant="outline" className={className}>
+          {item}
+        </Badge>
+      ))}
+    </div>
+  )
+}
+
+function BrandArchetypeProfileSheet({
+  open,
+  company,
+  profile,
+  onClose,
+}: {
+  open: boolean
+  company: Company | null
+  profile: BrandArchetypeProfile | null
+  onClose: () => void
+}) {
+  const createProfile = useCreateBrandArchetypeProfile()
+  const updateProfile = useUpdateBrandArchetypeProfile()
+
+  const [primaryArchetype, setPrimaryArchetype] = useState<BrandArchetype | ''>('')
+  const [secondaryArchetype, setSecondaryArchetype] = useState<string>(NO_SECONDARY_ARCHETYPE)
+  const [coreDesire, setCoreDesire] = useState('')
+  const [fear, setFear] = useState('')
+  const [strategy, setStrategy] = useState('')
+  const [tone, setTone] = useState('')
+  const [sentenceStyle, setSentenceStyle] = useState('')
+  const [vocabularyPrefer, setVocabularyPrefer] = useState('')
+  const [vocabularyAvoid, setVocabularyAvoid] = useState('')
+  const [audienceWho, setAudienceWho] = useState('')
+  const [audienceSpeaksAs, setAudienceSpeaksAs] = useState('')
+  const [messagingPillars, setMessagingPillars] = useState('')
+  const [guardrailsDo, setGuardrailsDo] = useState('')
+  const [guardrailsDont, setGuardrailsDont] = useState('')
+  const [referenceExamples, setReferenceExamples] = useState('')
+
+  useEffect(() => {
+    if (!open) return
+    setPrimaryArchetype(profile?.primary_archetype ?? '')
+    setSecondaryArchetype(profile?.secondary_archetype ?? NO_SECONDARY_ARCHETYPE)
+    setCoreDesire(profile?.core_desire ?? '')
+    setFear(profile?.fear ?? '')
+    setStrategy(profile?.strategy ?? '')
+    setTone(arrayToLines(profile?.voice.tone))
+    setSentenceStyle(profile?.voice.sentence_style ?? '')
+    setVocabularyPrefer(arrayToLines(profile?.voice.vocabulary_prefer))
+    setVocabularyAvoid(arrayToLines(profile?.voice.vocabulary_avoid))
+    setAudienceWho(profile?.audience.who ?? '')
+    setAudienceSpeaksAs(profile?.audience.speaks_to_them_as ?? '')
+    setMessagingPillars(arrayToLines(profile?.messaging_pillars))
+    setGuardrailsDo(arrayToLines(profile?.guardrails.do))
+    setGuardrailsDont(arrayToLines(profile?.guardrails.dont))
+    setReferenceExamples(arrayToLines(profile?.reference_examples))
+  }, [open, profile])
+
+  function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!primaryArchetype) {
+      toast.error('Selecione o arquétipo primário')
+      return
+    }
+
+    const payload: Omit<BrandArchetypeProfileCreateInput, 'company_id'> = {
+      primary_archetype: primaryArchetype,
+      secondary_archetype:
+        secondaryArchetype === NO_SECONDARY_ARCHETYPE
+          ? null
+          : (secondaryArchetype as BrandArchetype),
+      core_desire: coreDesire || null,
+      fear: fear || null,
+      strategy: strategy || null,
+      voice: {
+        tone: linesToArray(tone),
+        sentence_style: sentenceStyle || null,
+        vocabulary_prefer: linesToArray(vocabularyPrefer),
+        vocabulary_avoid: linesToArray(vocabularyAvoid),
+      },
+      audience: {
+        who: audienceWho || null,
+        speaks_to_them_as: audienceSpeaksAs || null,
+      },
+      messaging_pillars: linesToArray(messagingPillars),
+      guardrails: {
+        do: linesToArray(guardrailsDo),
+        dont: linesToArray(guardrailsDont),
+      },
+      reference_examples: linesToArray(referenceExamples),
+    }
+
+    if (profile) {
+      updateProfile.mutate({ id: profile.id, data: payload }, { onSuccess: onClose })
+    } else {
+      if (!company) return
+      createProfile.mutate({ ...payload, company_id: company.id }, { onSuccess: onClose })
+    }
+  }
+
+  const isPending = createProfile.isPending || updateProfile.isPending
+
+  return (
+    <Sheet open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+      <SheetContent className="overflow-y-auto data-[side=right]:w-full data-[side=right]:sm:max-w-none data-[side=right]:lg:w-[50vw]">
+        <SheetHeader>
+          <SheetTitle>{profile ? 'Editar arquétipo de marca' : 'Criar arquétipo de marca'}</SheetTitle>
+          <SheetDescription>
+            Preenchimento manual por enquanto — ver docs/arquetipos-de-marca.md para o framework e o
+            questionário de diagnóstico usados como referência.
+          </SheetDescription>
+        </SheetHeader>
+
+        <form className="space-y-4 px-4 pb-6" onSubmit={onSubmit}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Arquétipo primário</Label>
+              <Select
+                value={primaryArchetype || undefined}
+                onValueChange={(value) => setPrimaryArchetype(value as BrandArchetype)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Selecione..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {BRAND_ARCHETYPES.map((archetype) => (
+                    <SelectItem key={archetype.value} value={archetype.value}>
+                      {archetype.label} — {archetype.hint}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Arquétipo secundário</Label>
+              <Select value={secondaryArchetype} onValueChange={setSecondaryArchetype}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Nenhum" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_SECONDARY_ARCHETYPE}>Nenhum</SelectItem>
+                  {BRAND_ARCHETYPES.map((archetype) => (
+                    <SelectItem key={archetype.value} value={archetype.value}>
+                      {archetype.label} — {archetype.hint}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="space-y-2">
+              <Label htmlFor="ba-core-desire">Desejo central</Label>
+              <Input
+                id="ba-core-desire"
+                value={coreDesire}
+                onChange={(event) => setCoreDesire(event.target.value)}
+                placeholder="ex: ajudar o cliente a decidir bem"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ba-fear">Medo</Label>
+              <Input
+                id="ba-fear"
+                value={fear}
+                onChange={(event) => setFear(event.target.value)}
+                placeholder="ex: parecer genérico"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ba-strategy">Estratégia</Label>
+              <Input
+                id="ba-strategy"
+                value={strategy}
+                onChange={(event) => setStrategy(event.target.value)}
+                placeholder="ex: educar antes de vender"
+              />
+            </div>
+          </div>
+
+          <section className="space-y-3 rounded-lg border bg-card p-3 shadow-sm">
+            <h3 className="text-sm font-medium">Voz</h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="ba-tone">Tom (um por linha)</Label>
+                <Textarea
+                  id="ba-tone"
+                  value={tone}
+                  onChange={(event) => setTone(event.target.value)}
+                  placeholder={'direto\nconfiante\nacolhedor'}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ba-sentence-style">Estilo de frase</Label>
+                <Input
+                  id="ba-sentence-style"
+                  value={sentenceStyle}
+                  onChange={(event) => setSentenceStyle(event.target.value)}
+                  placeholder="frases curtas, sem jargão técnico"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ba-vocab-prefer">Vocabulário preferido (um por linha)</Label>
+                <Textarea
+                  id="ba-vocab-prefer"
+                  value={vocabularyPrefer}
+                  onChange={(event) => setVocabularyPrefer(event.target.value)}
+                  placeholder={'conforto\ncaimento perfeito'}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ba-vocab-avoid">Vocabulário a evitar (um por linha)</Label>
+                <Textarea
+                  id="ba-vocab-avoid"
+                  value={vocabularyAvoid}
+                  onChange={(event) => setVocabularyAvoid(event.target.value)}
+                  placeholder={'imperdível\ncorre que acaba'}
+                />
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-3 rounded-lg border bg-card p-3 shadow-sm">
+            <h3 className="text-sm font-medium">Público</h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="ba-audience-who">Quem é</Label>
+                <Input
+                  id="ba-audience-who"
+                  value={audienceWho}
+                  onChange={(event) => setAudienceWho(event.target.value)}
+                  placeholder="mulheres 25-40, classe B"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ba-audience-speaks-as">Como a marca fala com ele</Label>
+                <Input
+                  id="ba-audience-speaks-as"
+                  value={audienceSpeaksAs}
+                  onChange={(event) => setAudienceSpeaksAs(event.target.value)}
+                  placeholder="como amiga que entende de moda"
+                />
+              </div>
+            </div>
+          </section>
+
+          <div className="space-y-2">
+            <Label htmlFor="ba-pillars">Pilares de mensagem (um por linha)</Label>
+            <Textarea
+              id="ba-pillars"
+              value={messagingPillars}
+              onChange={(event) => setMessagingPillars(event.target.value)}
+              placeholder={'qualidade que dura\ncaimento para o corpo real'}
+            />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="ba-guardrails-do">Pode (um por linha)</Label>
+              <Textarea
+                id="ba-guardrails-do"
+                value={guardrailsDo}
+                onChange={(event) => setGuardrailsDo(event.target.value)}
+                placeholder={'citar benefício concreto'}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="ba-guardrails-dont">Não pode (um por linha)</Label>
+              <Textarea
+                id="ba-guardrails-dont"
+                value={guardrailsDont}
+                onChange={(event) => setGuardrailsDont(event.target.value)}
+                placeholder={'prometer desconto que não existe'}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="ba-examples">Exemplos de referência (um por linha)</Label>
+            <Textarea
+              id="ba-examples"
+              value={referenceExamples}
+              onChange={(event) => setReferenceExamples(event.target.value)}
+              placeholder="Não é sobre seguir tendência. É sobre vestir o que combina com você."
+            />
+          </div>
+
+          <div className="sticky bottom-0 -mx-4 flex justify-end gap-2 border-t bg-popover/95 p-4 backdrop-blur">
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button disabled={isPending}>
+              {isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="size-4" />
+              )}
+              Salvar
+            </Button>
+          </div>
+        </form>
+      </SheetContent>
+    </Sheet>
   )
 }

@@ -14,6 +14,7 @@ from .core.infrastructure.database.extensions import enable_vector_extension
 from .core.infrastructure.database.neo4j import close_driver, setup_schema
 from .core.logger import logger
 from .core.middleware import LoggingMiddleware
+from .features.brand_archetype.router import router as brand_archetype_router
 from .features.company.router import router as company_router
 from .features.dashboard.router import router as dashboard_router
 from .features.embeddings.router import router as embeddings_router
@@ -64,6 +65,7 @@ class App:
     def __add_routes(self):
         self.__app.include_router(router=health_router, prefix=settings.API_V1_PREFIX)
         self.__app.include_router(router=company_router, prefix=settings.API_V1_PREFIX)
+        self.__app.include_router(router=brand_archetype_router, prefix=settings.API_V1_PREFIX)
         self.__app.include_router(router=integration_router, prefix=settings.API_V1_PREFIX)
         self.__app.include_router(router=user_router, prefix=settings.API_V1_PREFIX)
         self.__app.include_router(router=dashboard_router, prefix=settings.API_V1_PREFIX)
