@@ -2,7 +2,10 @@
 (`app/features/order/sync_engine.py`), never through the HTTP API.
 """
 
+from __future__ import annotations
+
 from collections.abc import Sequence
+from typing import Any
 from uuid import UUID
 
 from app.features.order.orm import OrderORM
@@ -38,4 +41,30 @@ class OrderService:
             integration_id=integration_id,
             limit=limit,
             offset=offset,
+        )
+
+    async def list_filtered_for_company(
+        self,
+        company_id: UUID,
+        filters: dict[str, list[str]],
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[Sequence[OrderORM], int]:
+        return await self._repository.list_filtered_for_company(
+            company_id=company_id,
+            filters=filters,
+            limit=limit,
+            offset=offset,
+        )
+
+    async def filter_facets_for_company(
+        self,
+        company_id: UUID,
+        filters: dict[str, list[str]],
+        option_limit: int = 40,
+    ) -> list[dict[str, Any]]:
+        return await self._repository.filter_facets_for_company(
+            company_id=company_id,
+            filters=filters,
+            option_limit=option_limit,
         )

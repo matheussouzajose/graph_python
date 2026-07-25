@@ -1,13 +1,19 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.infrastructure.database.session import get_session
 from app.features.order.graph_sync import is_graph_sync_running, run_graph_sync
 from app.features.order.repository import OrderRepository
-from app.features.order.schemas import GraphSyncTriggerResponse, OrderResponse
+from app.features.order.schemas import (
+    GraphSyncTriggerResponse,
+    OrderFilterFacet,
+    OrderFiltersResponse,
+    OrderListResponse,
+    OrderResponse,
+)
 from app.features.order.service import OrderService
 from app.features.user.schemas import CurrentUser
 from app.features.user.security import get_current_user
@@ -25,21 +31,75 @@ ServiceDep = Annotated[OrderService, Depends(get_order_service)]
 CurrentUserDep = Annotated[CurrentUser, Depends(get_current_user)]
 
 
-@router.get("", response_model=list[OrderResponse])
+def _filters_from_query(
+    integration_id: list[str] | None,
+    status: list[str] | None,
+    origin: list[str] | None,
+    state: list[str] | None,
+    city: list[str] | None,
+    product_id: list[str] | None,
+) -> dict[str, list[str]]:
+    return {
+        key: values
+        for key, values in {
+            "integration_id": integration_id,
+            "status": status,
+            "origin": origin,
+            "state": state,
+            "city": city,
+            "product_id": product_id,
+        }.items()
+        if values
+    }
+
+
+@router.get("", response_model=OrderListResponse)
 async def list_orders(
     service: ServiceDep,
     current_user: CurrentUserDep,
-    integration_id: UUID | None = None,
+    integration_id: list[str] | None = Query(default=None),
+    status: list[str] | None = Query(default=None),
+    origin: list[str] | None = Query(default=None),
+    state: list[str] | None = Query(default=None),
+    city: list[str] | None = Query(default=None),
+    product_id: list[str] | None = Query(default=None),
     limit: int = 100,
     offset: int = 0,
-) -> list[OrderResponse]:
-    orders = await service.list_for_company(
+) -> OrderListResponse:
+    filters = _filters_from_query(integration_id, status, origin, state, city, product_id)
+    orders, total = await service.list_filtered_for_company(
         company_id=current_user.company_id,
-        integration_id=integration_id,
+        filters=filters,
         limit=limit,
         offset=offset,
     )
-    return [OrderResponse.model_validate(order) for order in orders]
+    return OrderListResponse(
+        items=[OrderResponse.model_validate(order) for order in orders],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/filters", response_model=OrderFiltersResponse)
+async def list_order_filters(
+    service: ServiceDep,
+    current_user: CurrentUserDep,
+    integration_id: list[str] | None = Query(default=None),
+    status: list[str] | None = Query(default=None),
+    origin: list[str] | None = Query(default=None),
+    state: list[str] | None = Query(default=None),
+    city: list[str] | None = Query(default=None),
+    product_id: list[str] | None = Query(default=None),
+    option_limit: int = 40,
+) -> OrderFiltersResponse:
+    filters = _filters_from_query(integration_id, status, origin, state, city, product_id)
+    facets = await service.filter_facets_for_company(
+        company_id=current_user.company_id,
+        filters=filters,
+        option_limit=option_limit,
+    )
+    return OrderFiltersResponse(facets=[OrderFilterFacet.model_validate(facet) for facet in facets])
 
 
 @router.get("/{order_id}", response_model=OrderResponse)

@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { AppShell } from '@/components/layout/AppShell'
 import { HomePage } from '@/pages/HomePage'
+import { OrdersPage } from '@/pages/OrdersPage'
 import { ProductsPage } from '@/pages/ProductsPage'
 import { CustomersPage } from '@/pages/CustomersPage'
 import { RecommendationsPage } from '@/pages/RecommendationsPage'
@@ -20,6 +21,7 @@ export default function App() {
             <AppShell>
               <Routes>
                 <Route path="/" element={<HomePage />} />
+                <Route path="/pedidos" element={<OrdersPage />} />
                 <Route path="/produtos" element={<ProductsPage />} />
                 <Route path="/clientes" element={<CustomersPage />} />
                 <Route path="/recomendacoes" element={<RecommendationsPage />} />

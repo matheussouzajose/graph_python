@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { BarChart3, LockKeyhole, Loader2, LogIn, ShieldCheck, Sparkles } from 'lucide-react'
+import { BarChart3, LockKeyhole, Loader2, LogIn, Sparkles, Target, Users } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -63,40 +63,55 @@ export function LoginPage() {
           </div>
           <div>
             <p className="text-sm font-semibold">Oráculo</p>
-            <p className="text-xs text-sidebar-foreground/55">Inteligência comercial</p>
+            <p className="text-xs text-sidebar-foreground/55">Crescimento orientado por dados</p>
           </div>
         </div>
         <div className="flex flex-1 flex-col justify-between p-8">
           <div className="space-y-8">
             <div className="max-w-md space-y-3">
-              <p className="text-sm font-medium text-sidebar-primary">Acesso seguro</p>
+              <p className="text-sm font-medium text-sidebar-primary">Inteligência comercial</p>
               <h1 className="text-3xl font-semibold tracking-tight">
-                Dados comerciais, recomendações e clientes em uma operação protegida.
+                Encontre oportunidades de venda escondidas nos seus pedidos.
               </h1>
               <p className="text-sm leading-6 text-sidebar-foreground/62">
-                Cada usuário acessa somente os dados da própria empresa. O token de sessão acompanha
-                as consultas ao dashboard, recomendações e Oráculo.
+                O Oráculo transforma histórico comercial em recomendações práticas para vender mais,
+                entender clientes e priorizar ações com clareza.
               </p>
             </div>
 
             <div className="grid gap-3">
               <div className="flex items-center gap-3 rounded-lg border border-sidebar-border bg-sidebar-accent/55 p-3">
-                <ShieldCheck className="size-5 text-sidebar-primary" />
+                <Target className="size-5 text-sidebar-primary" />
                 <div>
-                  <p className="text-sm font-medium">Isolamento por empresa</p>
-                  <p className="text-xs text-sidebar-foreground/55">Company scope no backend.</p>
+                  <p className="text-sm font-medium">Próximas melhores ações</p>
+                  <p className="text-xs text-sidebar-foreground/55">
+                    Produtos, clientes e oportunidades com prioridade.
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-3 rounded-lg border border-sidebar-border bg-sidebar-accent/55 p-3">
                 <BarChart3 className="size-5 text-sidebar-primary" />
                 <div>
-                  <p className="text-sm font-medium">Operação comercial</p>
-                  <p className="text-xs text-sidebar-foreground/55">KPIs, RFM e recomendações.</p>
+                  <p className="text-sm font-medium">Visão clara da operação</p>
+                  <p className="text-xs text-sidebar-foreground/55">
+                    KPIs, segmentos e tendências em um só painel.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 rounded-lg border border-sidebar-border bg-sidebar-accent/55 p-3">
+                <Users className="size-5 text-sidebar-primary" />
+                <div>
+                  <p className="text-sm font-medium">Clientes mais bem trabalhados</p>
+                  <p className="text-xs text-sidebar-foreground/55">
+                    Identifique leais, potenciais e clientes em risco.
+                  </p>
                 </div>
               </div>
             </div>
           </div>
-          <p className="text-xs text-sidebar-foreground/45">JWT ativo com expiração configurada.</p>
+          <p className="text-xs text-sidebar-foreground/45">
+            Dados da sua empresa protegidos em cada acesso.
+          </p>
         </div>
       </section>
 
@@ -109,7 +124,7 @@ export function LoginPage() {
             <div>
               <CardTitle className="text-xl">Entrar no Oráculo</CardTitle>
               <p className="mt-1 text-sm text-muted-foreground">
-                Use seu e-mail corporativo para acessar o dashboard.
+                Acesse sua central de inteligência comercial.
               </p>
             </div>
           </CardHeader>

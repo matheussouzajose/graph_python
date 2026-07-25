@@ -42,6 +42,60 @@ e das futuras integracoes de dados comerciais.
 - Quais produtos tem maior valor vendido?
 - Explique o comportamento de compra do cliente X.
 
+## Perguntas de "por quê" (explicabilidade)
+
+Perguntas de causa/explicação sobre um cliente específico (não agregada) já
+respondem bem hoje via `/rag/ask`, sem precisar de nenhum dado novo — o RFM já
+grava os componentes (`rfm_recency_days`, `rfm_frequency`, `rfm_monetary`) por
+trás de cada `rfm_segment`, e a rota LOCAL já expõe esses componentes no
+contexto do LLM. Validado ao vivo (2026-07-25) contra uma cliente real
+`em_risco` (respostas conferidas manualmente, não é suite automatizada):
+
+- Por que o cliente X está no segmento `em_risco`/`hibernando`/`campeoes`? —
+  validado.
+- Por que o cliente X parece ter parado de comprar? — validado.
+- Explique o comportamento de compra do cliente X. — validado.
+
+Regra prática: pergunta de "por quê" sobre uma entidade nomeada (um cliente
+específico) deve cair na rota LOCAL, não GLOBAL — é lá que o contexto com os
+componentes RFM já está disponível. Perguntas de "por quê" agregadas (ex:
+"por que a categoria X caiu?") continuam exigindo dado novo (série temporal),
+ver a seção de perguntas que exigem dados adicionais.
+
+**Atualizado em 2026-07-25**: `rag/retriever.py` (`EXPAND_PRODUCT_CONTEXT`/
+`EXPAND_CUSTOMER_CONTEXT`) e `rag/chain.py` passaram a puxar `SIMILAR_TO.score`
+e `BOUGHT_WITH.support_count/confidence/lift` para o contexto do LLM — os
+mesmos números que `recommend_by_customer`/`recommend_by_product`
+(`graph_algorithms/gds.py`) usam, só que agora também acessíveis via
+`/rag/ask` em linguagem natural, não só via
+`POST /graph-algorithms/recommendations/{product,customer}`. Validado ao vivo:
+
+- Por que o produto Y é comprado junto com o produto Z / por que
+  recomendariam comprar os dois juntos? — validado (resposta cita
+  support_count/confidence/lift reais).
+- Que produto vocês recomendariam para o cliente X (e por quê)? — validado
+  (resposta cita o produto complementar real do histórico dela, com
+  confidence/lift).
+- Por que recomendariam **especificamente o produto Y** (nomeado) para o
+  cliente X? — **não confiável ainda**. O contexto do cliente só carrega uma
+  fatia limitada e não-determinística (até 8 produtos que ela comprou, até 5
+  recomendações) das associações `BOUGHT_WITH` do histórico dela; se o
+  produto Y perguntado não cair nessa fatia, o LLM responde "sem dados
+  suficientes" mesmo a relação existindo no grafo. Pra essa combinação
+  (cliente nomeado + produto nomeado) responder de forma confiável, o
+  retriever precisaria de um caminho de expansão dedicado que primeiro ache
+  os dois nós e depois verifique a relação `BOUGHT_WITH`/`SIMILAR_TO` entre
+  eles diretamente — hoje o retriever só expande "um tipo de entidade por
+  vez" (order/product/customer isolados), não pares.
+
+Achado durante a validação, corrigido de graça: a busca lexical de fallback
+(usada quando não há embeddings gerados, como é o caso deste dataset — sem
+`/embeddings/run` os índices vetoriais nem existem) também tinha o mesmo bug
+de duplicação e ranking fraco em `LEXICAL_SEARCH_PRODUCTS`
+(`rag/retriever.py`) que já tinha sido corrigido em `LEXICAL_SEARCH_CUSTOMERS`
+— sem isso, perguntas sobre um produto específico podiam não achar o produto
+certo antes mesmo de chegar na parte de explicabilidade.
+
 ## Perguntas que o produto deve suportar em breve
 
 - Quais produtos tem alta procura mas baixa conversao?

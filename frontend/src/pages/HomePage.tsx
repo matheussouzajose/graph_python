@@ -1,38 +1,19 @@
-import { useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import {
   Database,
-  Loader2,
   Package,
   Play,
   ReceiptText,
-  RefreshCw,
-  Sparkles,
   Users,
   Wallet,
   Workflow,
 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { StatCard } from '@/components/shared/StatCard'
 import { RelativeTime } from '@/components/shared/RelativeTime'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { SectionCard } from '@/components/shared/SectionCard'
 import { useOverview, useSyncStatus } from '@/hooks/use-dashboard'
-import { useIntegrations } from '@/hooks/use-catalog'
-import {
-  useGraphSyncAction,
-  useRunAlgorithmsAction,
-  useRunEmbeddingsAction,
-  useSyncIntegrationAction,
-} from '@/hooks/use-actions'
 import { formatCurrency, formatNumber } from '@/lib/format'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -56,13 +37,6 @@ const STATUS_COLORS: Record<string, string> = {
 export function HomePage() {
   const overview = useOverview()
   const syncStatus = useSyncStatus()
-  const integrations = useIntegrations()
-  const [selectedIntegration, setSelectedIntegration] = useState<string>('')
-
-  const syncAction = useSyncIntegrationAction()
-  const graphSyncAction = useGraphSyncAction()
-  const algorithmsAction = useRunAlgorithmsAction()
-  const embeddingsAction = useRunEmbeddingsAction()
 
   const statusData = (overview.data?.orders_by_status ?? []).map((item) => ({
     key: item.status,
@@ -70,9 +44,6 @@ export function HomePage() {
     count: item.count,
     color: STATUS_COLORS[item.status] ?? '#64748b',
   }))
-  const hasIntegrations = (integrations.data ?? []).length > 0
-  const hasOrders = (overview.data?.total_orders ?? 0) > 0
-  const hasAlgorithms = Boolean(overview.data?.last_algorithms_run_at)
 
   return (
     <div className="space-y-6">
@@ -81,93 +52,6 @@ export function HomePage() {
         description="Acompanhe a saúde do pipeline e os principais indicadores da empresa."
         icon={Workflow}
       />
-
-      <SectionCard
-        title="Pipeline de dados"
-        description="Sincronize pedidos, projete o grafo e atualize os sinais comerciais."
-        icon={Database}
-      >
-        <div className="flex flex-wrap items-center gap-2.5">
-          <Select value={selectedIntegration} onValueChange={setSelectedIntegration}>
-            <SelectTrigger className="w-56">
-              <SelectValue placeholder="Selecione uma integração" />
-            </SelectTrigger>
-            <SelectContent>
-              {(integrations.data ?? []).map((integration) => (
-                <SelectItem key={integration.id} value={integration.id}>
-                  {integration.name} ({integration.provider})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button
-            variant="outline"
-            disabled={!selectedIntegration || syncAction.isPending}
-            onClick={() => syncAction.mutate(selectedIntegration)}
-          >
-            {syncAction.isPending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <RefreshCw className="size-4" />
-            )}
-            Sincronizar pedidos
-          </Button>
-          <Button
-            variant="outline"
-            disabled={graphSyncAction.isPending}
-            onClick={() => graphSyncAction.mutate()}
-          >
-            {graphSyncAction.isPending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Workflow className="size-4" />
-            )}
-            Projetar no grafo
-          </Button>
-          <Button
-            variant="outline"
-            disabled={algorithmsAction.isPending}
-            onClick={() => algorithmsAction.mutate()}
-          >
-            {algorithmsAction.isPending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Play className="size-4" />
-            )}
-            Rodar algoritmos
-          </Button>
-          <Button
-            variant="outline"
-            disabled={embeddingsAction.isPending}
-            onClick={() => embeddingsAction.mutate()}
-          >
-            {embeddingsAction.isPending ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <Sparkles className="size-4" />
-            )}
-            Rodar embeddings
-          </Button>
-        </div>
-      </SectionCard>
-
-      <div className="grid gap-3 md:grid-cols-3">
-        <PipelineTile
-          label="Integrações"
-          ready={hasIntegrations}
-          value={hasIntegrations ? `${integrations.data?.length ?? 0} cadastrada(s)` : 'Nenhuma'}
-        />
-        <PipelineTile
-          label="Pedidos sincronizados"
-          ready={hasOrders}
-          value={formatNumber(overview.data?.total_orders)}
-        />
-        <PipelineTile
-          label="Sinais do grafo"
-          ready={hasAlgorithms}
-          value={hasAlgorithms ? 'Atualizados' : 'Pendente'}
-        />
-      </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <StatCard
@@ -214,7 +98,7 @@ export function HomePage() {
             ) : statusData.length === 0 ? (
               <EmptyState
                 title="Sem pedidos ainda"
-                description="Sincronize uma integração para ver os status aqui."
+                description="Sincronize uma integração em Configurações > Integrações para ver os status aqui."
               />
             ) : (
               <ResponsiveContainer width="100%" height={260}>
@@ -253,24 +137,6 @@ export function HomePage() {
           </SectionCard>
         </div>
       </div>
-    </div>
-  )
-}
-
-function PipelineTile({ label, value, ready }: { label: string; value: string; ready: boolean }) {
-  return (
-    <div className="rounded-lg border bg-card p-3 shadow-sm">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-medium text-muted-foreground">{label}</p>
-        <span
-          className={
-            ready
-              ? 'size-2.5 rounded-full bg-emerald-500'
-              : 'size-2.5 rounded-full bg-amber-500'
-          }
-        />
-      </div>
-      <p className="mt-1 text-sm font-semibold">{value}</p>
     </div>
   )
 }

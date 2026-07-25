@@ -158,6 +158,57 @@ export interface IntegrationUpdateInput {
   is_active?: boolean
 }
 
+export interface Order {
+  id: string
+  integration_id: string
+  external_order_id: string
+  external_company_id: string
+  code: number | null
+  origin: string | null
+  status: string | null
+  observations: string | null
+  is_unified: boolean
+  survey_note: number | null
+  survey_comment: string | null
+  external_created_at: string | null
+  external_updated_at: string | null
+  expires_at: string | null
+  customer: Record<string, unknown>
+  products: Record<string, unknown>[]
+  address: Record<string, unknown>
+  freight: Record<string, unknown>
+  seller: Record<string, unknown>
+  payment: Record<string, unknown>
+  summary: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface OrderListResponse {
+  items: Order[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface OrderFilterOption {
+  value: string
+  label: string
+  count: number
+}
+
+export interface OrderFilterFacet {
+  key: string
+  label: string
+  options: OrderFilterOption[]
+}
+
+export interface OrderFiltersResponse {
+  facets: OrderFilterFacet[]
+}
+
+export type OrderFilterParams = Record<string, string[]>
+
 export interface TriggerResponse {
   status: 'accepted' | 'already_running' | string
   integration_id?: string | null
@@ -199,13 +250,37 @@ export interface AskResponse {
   sources: AskSource[] | null
 }
 
+export interface ChatSession {
+  id: string
+  title: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ChatMessage {
+  id: string
+  session_id: string
+  role: 'user' | 'assistant'
+  content: string
+  route: 'LOCAL' | 'GLOBAL' | null
+  generated_query: string | null
+  sources: AskSource[] | null
+  created_at: string
+}
+
+export interface ChatHistory {
+  session: ChatSession
+  messages: ChatMessage[]
+}
+
 // Eventos do SSE de POST /rag/ask/stream (ver app/features/rag/router.py).
 // `type` decide quais dos outros campos vêm preenchidos.
 export interface OracleStreamEvent {
-  type: 'route' | 'meta' | 'token' | 'error' | 'done'
+  type: 'route' | 'meta' | 'token' | 'error' | 'done' | 'question' | 'replace'
   route?: 'LOCAL' | 'GLOBAL'
   sources?: AskSource[]
   generated_query?: string
   text?: string
   message?: string
+  standalone_question?: string
 }

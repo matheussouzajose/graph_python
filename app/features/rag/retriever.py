@@ -116,15 +116,23 @@ RETURN o.id AS order_id, 0.55 AS score
 LIMIT $top_k
 """
 
+# Mesmo padrão de dedup + ranking por especificidade de `LEXICAL_SEARCH_CUSTOMERS`
+# (ver comentário lá) — sem `DISTINCT p`, um produto vendido em N pedidos
+# aparecia N vezes só nesta busca, e ordenar só por `pagerank` (sem relação
+# com o quão bem o termo bate) deixava um produto popular, mas só
+# parcialmente relacionado à pergunta, aparecer antes do produto que o
+# usuário realmente perguntou.
 LEXICAL_SEARCH_PRODUCTS = """
 MATCH (o:Order)-[:BELONGS_TO]->(:Company {id: $company_id})
 MATCH (o)-[:CONTAINS]->(p:Product)
-WHERE any(term IN $terms WHERE
+WITH DISTINCT p
+WITH p, [term IN $terms WHERE
     toLower(coalesce(p.name, '')) CONTAINS term OR
     toLower(toString(coalesce(p.code, ''))) CONTAINS term
-)
-RETURN p.id AS product_id, 0.60 AS score
-ORDER BY coalesce(p.pagerank, 0.0) DESC
+] AS matched_terms
+WHERE size(matched_terms) > 0
+RETURN p.id AS product_id, 0.5 + (0.05 * size(matched_terms)) AS score
+ORDER BY size(matched_terms) DESC, coalesce(p.pagerank, 0.0) DESC
 LIMIT $top_k
 """
 
@@ -132,18 +140,31 @@ LIMIT $top_k
 # quanto "clientes em SP" quando essa pergunta acaba caindo em LOCAL em vez
 # de GLOBAL (o texto do cliente carrega cidade/estado, ver
 # `embeddings/text_builder.py::build_customer_text`).
+#
+# `WITH DISTINCT c` antes do filtro é obrigatório: sem ele, cada pedido do
+# cliente gera uma linha duplicada dele mesmo, e um cliente com muitos
+# pedidos podia sozinho preencher o `top_k` inteiro com N cópias de si mesmo
+# (confirmado ao vivo: um cliente com 11 pedidos aparecia 11 vezes). Ranquear
+# por `size(matched_terms)` (quantos termos da pergunta bateram) antes de
+# `rfm_score` também é obrigatório — sobrenomes comuns em português (ex:
+# "Alves", "Soares") batem por coincidência em vários clientes não
+# relacionados, e ordenar só por `rfm_score` (sem relação com relevância)
+# deixava esses falsos positivos, quando tinham `rfm_score` mais alto,
+# expulsarem o cliente certo do `top_k` mesmo ele batendo o nome inteiro.
 LEXICAL_SEARCH_CUSTOMERS = """
 MATCH (o:Order)-[:BELONGS_TO]->(:Company {id: $company_id})
 MATCH (o)-[:PLACED_BY]->(c:Customer)
-WHERE any(term IN $terms WHERE
+WITH DISTINCT c
+WITH c, [term IN $terms WHERE
     toLower(coalesce(c.name, '')) CONTAINS term OR
     toLower(coalesce(c.document, '')) CONTAINS term OR
     toLower(coalesce(c.email, '')) CONTAINS term OR
     toLower(coalesce(c.city_name, '')) CONTAINS term OR
     toLower(coalesce(c.state_initials, '')) CONTAINS term
-)
-RETURN c.id AS customer_id, 0.55 AS score
-ORDER BY coalesce(c.rfm_score, 0) DESC
+] AS matched_terms
+WHERE size(matched_terms) > 0
+RETURN c.id AS customer_id, 0.5 + (0.05 * size(matched_terms)) AS score
+ORDER BY size(matched_terms) DESC, coalesce(c.rfm_score, 0) DESC
 LIMIT $top_k
 """
 
@@ -184,14 +205,27 @@ WHERE EXISTS {
 }
 OPTIONAL MATCH (p)-[:HAS_VARIANT]->(:SKU)-[:HAS_COLOR]->(color:Color)
 OPTIONAL MATCH (p)-[:HAS_VARIANT]->(:SKU)-[:HAS_SIZE]->(size:Size)
-OPTIONAL MATCH (p)-[:SIMILAR_TO]->(similar:Product)
 OPTIONAL MATCH (p)<-[:CONTAINS]-(o:Order)-[:BELONGS_TO]->(:Company {id: $company_id})
 OPTIONAL MATCH (o)-[:PLACED_BY]->(buyer:Customer)
 WITH p, collect(DISTINCT color.name) AS colors,
      collect(DISTINCT size.name) AS sizes,
-     collect(DISTINCT similar.name)[0..3] AS similar_products,
      collect(DISTINCT buyer.name)[0..5] AS buyers,
      collect(DISTINCT o.code)[0..5] AS recent_order_codes
+CALL {
+    WITH p
+    MATCH (p)-[s:SIMILAR_TO]->(similar:Product)
+    RETURN collect(
+        {name: similar.name, code: similar.code, score: s.score}
+    )[0..3] AS similar_products
+}
+CALL {
+    WITH p
+    MATCH (p)-[b:BOUGHT_WITH]->(assoc:Product)
+    RETURN collect({
+        name: assoc.name, code: assoc.code,
+        support_count: b.support_count, confidence: b.confidence, lift: b.lift
+    })[0..3] AS bought_with_products
+}
 RETURN
     p.id AS product_id,
     p.name AS product_name,
@@ -202,6 +236,7 @@ RETURN
     colors,
     sizes,
     similar_products,
+    bought_with_products,
     buyers,
     recent_order_codes
 """
@@ -211,7 +246,17 @@ MATCH (c:Customer {id: $customer_id})<-[:PLACED_BY]-(:Order)
       -[:BELONGS_TO]->(:Company {id: $company_id})
 OPTIONAL MATCH (c)<-[:PLACED_BY]-(o:Order)-[:BELONGS_TO]->(:Company {id: $company_id})
 OPTIONAL MATCH (o)-[:CONTAINS]->(p:Product)
-WITH c, collect(DISTINCT p.name)[0..8] AS products
+WITH c, collect(DISTINCT p)[0..8] AS owned_products
+CALL {
+    WITH owned_products
+    UNWIND owned_products AS op
+    MATCH (op)-[b:BOUGHT_WITH]->(rec:Product)
+    WHERE NOT rec IN owned_products
+    RETURN collect(DISTINCT {
+        name: rec.name, code: rec.code, based_on: op.name,
+        confidence: b.confidence, lift: b.lift
+    })[0..5] AS recommended_products
+}
 RETURN
     c.id AS customer_id,
     c.name AS customer_name,
@@ -223,7 +268,8 @@ RETURN
     c.city_name AS city_name,
     c.state_initials AS state_initials,
     c.community AS community,
-    products
+    [x IN owned_products | x.name] AS products,
+    recommended_products
 """
 
 
@@ -240,8 +286,45 @@ def _embed_query(query: str) -> list[float]:
     return response.data[0].embedding
 
 
+# Palavras funcionais em português que aparecem em quase toda pergunta
+# (sobretudo em perguntas de "por que") e coincidem por acaso como substring
+# de nome/email/cidade de clientes não relacionados (confirmado ao vivo:
+# "por"/"que" batiam em 57 clientes via e-mail/cidade só por coincidência de
+# substring) — sem filtrar isso, a busca lexical de fallback fica poluída de
+# falsos positivos que competem pelo `top_k` com o termo que importa de
+# verdade (ex: o nome do cliente perguntado).
+_STOPWORDS = {
+    "por",
+    "que",
+    "para",
+    "com",
+    "sem",
+    "uma",
+    "dos",
+    "das",
+    "nos",
+    "nas",
+    "tem",
+    "ter",
+    "foi",
+    "sao",
+    "são",
+    "está",
+    "esta",
+    "isso",
+    "essa",
+    "esse",
+    "como",
+    "quando",
+    "onde",
+    "qual",
+    "quais",
+}
+
+
 def _extract_terms(question: str) -> list[str]:
-    return [term.lower() for term in re.findall(r"[\w-]{3,}", question, flags=re.UNICODE)]
+    terms = [term.lower() for term in re.findall(r"[\w-]{3,}", question, flags=re.UNICODE)]
+    return [term for term in terms if term not in _STOPWORDS]
 
 
 def _vector_indexes_ready() -> bool:

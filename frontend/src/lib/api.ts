@@ -1,6 +1,8 @@
 import type {
   AskResponse,
   BoughtTogetherPair,
+  ChatHistory,
+  ChatSession,
   Company,
   CustomerDetail,
   CustomerSummary,
@@ -8,6 +10,9 @@ import type {
   IntegrationUpdateInput,
   LoginResponse,
   OracleStreamEvent,
+  OrderFilterParams,
+  OrderFiltersResponse,
+  OrderListResponse,
   Overview,
   RecommendationResult,
   RfmSegmentSummary,
@@ -79,6 +84,25 @@ function qs(params: Record<string, string | number | boolean | null | undefined>
   return query ? `?${query}` : ''
 }
 
+function filterQs(
+  filters: OrderFilterParams,
+  params: Record<string, string | number | boolean | null | undefined> = {},
+): string {
+  const search = new URLSearchParams()
+  for (const [key, values] of Object.entries(filters)) {
+    for (const value of values) {
+      if (value) search.append(key, value)
+    }
+  }
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== null && value !== undefined && value !== '') {
+      search.set(key, String(value))
+    }
+  }
+  const query = search.toString()
+  return query ? `?${query}` : ''
+}
+
 // Dashboard
 export const getOverview = () => request<Overview>('/dashboard/overview')
 
@@ -120,6 +144,13 @@ export const updateIntegration = (integrationId: string, data: IntegrationUpdate
 export const deleteIntegration = (integrationId: string) =>
   request<void>(`/integrations/${integrationId}`, { method: 'DELETE' })
 
+// Pedidos
+export const getOrders = (filters: OrderFilterParams = {}, limit = 50, offset = 0) =>
+  request<OrderListResponse>(`/orders${filterQs(filters, { limit, offset })}`)
+
+export const getOrderFilters = (filters: OrderFilterParams = {}, optionLimit = 40) =>
+  request<OrderFiltersResponse>(`/orders/filters${filterQs(filters, { option_limit: optionLimit })}`)
+
 // Ações (jobs em background / triggers)
 export const syncIntegration = (integrationId: string) =>
   request<TriggerResponse>(`/integrations/${integrationId}/sync`, { method: 'POST' })
@@ -152,6 +183,18 @@ export const askOracle = (question: string, topK = 5) =>
     method: 'POST',
     body: JSON.stringify({ question, top_k: topK }),
   })
+
+export const createChatSession = (title?: string) =>
+  request<ChatSession>('/rag/chat/sessions', {
+    method: 'POST',
+    body: JSON.stringify({ title }),
+  })
+
+export const getChatSessions = (limit = 30) =>
+  request<ChatSession[]>(`/rag/chat/sessions${qs({ limit })}`)
+
+export const getChatHistory = (sessionId: string) =>
+  request<ChatHistory>(`/rag/chat/sessions/${encodeURIComponent(sessionId)}`)
 
 /**
  * Variante em streaming de `askOracle` (`POST /rag/ask/stream`, SSE). Não dá
@@ -204,6 +247,56 @@ export async function streamOracleAsk(
           onEvent(JSON.parse(dataLine.slice('data: '.length)) as OracleStreamEvent)
         } catch {
           // linha malformada (não deveria acontecer vindo do backend) — ignora
+        }
+      }
+      boundary = buffer.indexOf('\n\n')
+    }
+  }
+}
+
+export async function streamChatMessage(
+  sessionId: string,
+  message: string,
+  topK: number,
+  onEvent: (event: OracleStreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(`${BASE_URL}/rag/chat/sessions/${encodeURIComponent(sessionId)}/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(getStoredAccessToken()
+        ? { Authorization: `Bearer ${getStoredAccessToken()}` }
+        : {}),
+    },
+    body: JSON.stringify({ message, top_k: topK }),
+    signal,
+  })
+
+  if (!response.ok || !response.body) {
+    throw new ApiError(response.status, `Erro ${response.status} ao conversar`)
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+
+    let boundary = buffer.indexOf('\n\n')
+    while (boundary !== -1) {
+      const rawEvent = buffer.slice(0, boundary)
+      buffer = buffer.slice(boundary + 2)
+
+      const dataLine = rawEvent.split('\n').find((line) => line.startsWith('data: '))
+      if (dataLine) {
+        try {
+          onEvent(JSON.parse(dataLine.slice('data: '.length)) as OracleStreamEvent)
+        } catch {
+          // ignora evento malformado
         }
       }
       boundary = buffer.indexOf('\n\n')

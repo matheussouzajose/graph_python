@@ -44,6 +44,25 @@ def _format_order_context(ctx: dict) -> str:
     )
 
 
+def _format_similar_products(similar_products: list[dict]) -> str:
+    if not similar_products:
+        return "nenhum"
+    return ", ".join(
+        f"{item.get('name')} (score de similaridade {item.get('score') or 0:.3f})"
+        for item in similar_products
+    )
+
+
+def _format_bought_with_products(bought_with_products: list[dict]) -> str:
+    if not bought_with_products:
+        return "nenhum"
+    return "; ".join(
+        f"{item.get('name')} (comprado junto em {item.get('support_count') or 0} pedido(s), "
+        f"confiança {item.get('confidence') or 0:.2f}, lift {item.get('lift') or 0:.2f})"
+        for item in bought_with_products
+    )
+
+
 def _format_product_context(ctx: dict) -> str:
     price = ctx.get("price") or 0
     price_promotional = ctx.get("price_promotional")
@@ -64,8 +83,11 @@ def _format_product_context(ctx: dict) -> str:
     sizes = ctx.get("sizes") or []
     if sizes:
         lines.append(f"  Tamanhos disponíveis: {', '.join(sizes)}")
+    similar_products_text = _format_similar_products(ctx.get("similar_products") or [])
+    lines.append(f"  Produtos parecidos (SIMILAR_TO): {similar_products_text}")
     lines.append(
-        f"  Produtos relacionados: {', '.join(ctx.get('similar_products') or []) or 'nenhum'}"
+        f"  Produtos comprados junto (BOUGHT_WITH, com support/confidence/lift): "
+        f"{_format_bought_with_products(ctx.get('bought_with_products') or [])}"
     )
     buyers = ctx.get("buyers") or []
     lines.append(f"  Clientes que compraram: {', '.join(buyers) if buyers else 'nenhum'}")
@@ -79,6 +101,16 @@ def _format_product_context(ctx: dict) -> str:
     lines.append(f"  Score de recuperação: {similarity_score:.3f}")
 
     return "\n".join(lines)
+
+
+def _format_recommended_products(recommended_products: list[dict]) -> str:
+    if not recommended_products:
+        return "nenhum"
+    return "; ".join(
+        f"{item.get('name')} (comprado junto com {item.get('based_on')} que ela já levou, "
+        f"confiança {item.get('confidence') or 0:.2f}, lift {item.get('lift') or 0:.2f})"
+        for item in recommended_products
+    )
 
 
 def _format_customer_context(ctx: dict) -> str:
@@ -98,6 +130,11 @@ def _format_customer_context(ctx: dict) -> str:
         lines.append(f"  Comunidade de clientes: {ctx.get('community')}")
     products = ctx.get("products") or []
     lines.append(f"  Produtos mais comprados: {', '.join(products) if products else 'nenhum'}")
+    recommended_products_text = _format_recommended_products(ctx.get("recommended_products") or [])
+    lines.append(
+        f"  Produtos que poderiam ser recomendados a ela (BOUGHT_WITH do histórico dela, "
+        f"com confidence/lift): {recommended_products_text}"
+    )
     lines.append(f"  Score de recuperação: {similarity_score:.3f}")
 
     return "\n".join(lines)

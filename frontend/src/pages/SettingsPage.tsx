@@ -3,12 +3,17 @@ import type { FormEvent, ReactNode } from 'react'
 import {
   Building2,
   CheckCircle2,
+  Database,
   Loader2,
   Pencil,
+  Play,
   PlugZap,
   Power,
   Plus,
+  RefreshCw,
+  Sparkles,
   Trash2,
+  Workflow,
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -42,6 +47,12 @@ import {
   useIntegrations,
   useUpdateIntegration,
 } from '@/hooks/use-catalog'
+import {
+  useGraphSyncAction,
+  useRunAlgorithmsAction,
+  useRunEmbeddingsAction,
+  useSyncIntegrationAction,
+} from '@/hooks/use-actions'
 import type { Integration } from '@/types/api'
 
 type KeyValueType = 'string' | 'number' | 'boolean' | 'json' | 'null'
@@ -217,9 +228,59 @@ function IntegrationsSettings({
   const [editing, setEditing] = useState<Integration | null>(null)
   const [deleting, setDeleting] = useState<Integration | null>(null)
   const deleteIntegration = useDeleteIntegration()
+  const syncIntegration = useSyncIntegrationAction()
+  const graphSyncAction = useGraphSyncAction()
+  const algorithmsAction = useRunAlgorithmsAction()
+  const embeddingsAction = useRunEmbeddingsAction()
 
   return (
     <>
+      <SectionCard
+        title="Pipeline de dados"
+        description="Sincronize integrações, projete dados no grafo e atualize os sinais comerciais."
+        icon={Database}
+        className="mb-4"
+      >
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Button
+            variant="outline"
+            disabled={graphSyncAction.isPending}
+            onClick={() => graphSyncAction.mutate()}
+          >
+            {graphSyncAction.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Workflow className="size-4" />
+            )}
+            Projetar no grafo
+          </Button>
+          <Button
+            variant="outline"
+            disabled={algorithmsAction.isPending}
+            onClick={() => algorithmsAction.mutate()}
+          >
+            {algorithmsAction.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Play className="size-4" />
+            )}
+            Rodar algoritmos
+          </Button>
+          <Button
+            variant="outline"
+            disabled={embeddingsAction.isPending}
+            onClick={() => embeddingsAction.mutate()}
+          >
+            {embeddingsAction.isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Sparkles className="size-4" />
+            )}
+            Rodar embeddings
+          </Button>
+        </div>
+      </SectionCard>
+
       <SectionCard
         title="Integrações"
         description="Atualize credenciais, parâmetros e status das conexões ERP."
@@ -262,6 +323,20 @@ function IntegrationsSettings({
                     </div>
                   </div>
                   <div className="flex items-center gap-2 lg:justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={!integration.is_active || syncIntegration.isPending}
+                      onClick={() => syncIntegration.mutate(integration.id)}
+                    >
+                      {syncIntegration.isPending &&
+                      syncIntegration.variables === integration.id ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <RefreshCw className="size-4" />
+                      )}
+                      Sincronizar
+                    </Button>
                     <Button variant="outline" size="sm" onClick={() => setEditing(integration)}>
                       <Pencil className="size-4" />
                       Editar

@@ -36,3 +36,26 @@ class OrderResponse(BaseModel):
 class GraphSyncTriggerResponse(BaseModel):
     status: str
     integration_id: UUID | None
+
+
+class OrderFilterOption(BaseModel):
+    value: str
+    label: str
+    count: int
+
+
+class OrderFilterFacet(BaseModel):
+    key: str
+    label: str
+    options: list[OrderFilterOption]
+
+
+class OrderFiltersResponse(BaseModel):
+    facets: list[OrderFilterFacet]
+
+
+class OrderListResponse(BaseModel):
+    items: list[OrderResponse]
+    total: int
+    limit: int
+    offset: int

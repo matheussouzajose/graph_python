@@ -54,9 +54,6 @@ GLOBAL_KEYWORDS = re.compile(
 
 
 def _classify(question: str) -> str:
-    if GLOBAL_KEYWORDS.search(question):
-        return "GLOBAL"
-
     try:
         response = _client.chat.completions.create(
             model=settings.OPENAI_CHAT_MODEL,

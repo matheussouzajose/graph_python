@@ -8,12 +8,14 @@ does not contradict the "never validate via the database" rule applied to
 `company`/`integration` — see CLAUDE.md.
 """
 
+from __future__ import annotations
+
 from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -129,3 +131,153 @@ class OrderRepository:
         if integration_id is not None:
             stmt = stmt.where(OrderORM.integration_id == integration_id)
         return (await self._session.scalars(stmt)).all()
+
+    def _filter_where(
+        self,
+        company_id: UUID,
+        filters: dict[str, list[str]],
+        exclude: str | None = None,
+    ) -> tuple[str, dict[str, Any]]:
+        clauses = ["i.company_id = :company_id"]
+        params: dict[str, Any] = {"company_id": company_id}
+
+        def values_for(key: str) -> list[str]:
+            if exclude == key:
+                return []
+            return [value for value in filters.get(key, []) if value]
+
+        for key, column in {
+            "integration_id": "o.integration_id::text",
+            "status": "o.status",
+            "origin": "o.origin",
+        }.items():
+            values = values_for(key)
+            if values:
+                param = f"{key}_values"
+                clauses.append(f"{column} = ANY(:{param})")
+                params[param] = values
+
+        state_values = values_for("state")
+        if state_values:
+            clauses.append("o.address -> 'state' ->> 'initials' = ANY(:state_values)")
+            params["state_values"] = state_values
+
+        city_values = values_for("city")
+        if city_values:
+            clauses.append("o.address -> 'city' ->> 'name' = ANY(:city_values)")
+            params["city_values"] = city_values
+
+        product_values = values_for("product_id")
+        if product_values:
+            clauses.append(
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements(o.products) AS selected_product
+                    WHERE selected_product ->> 'id' = ANY(:product_id_values)
+                )
+                """
+            )
+            params["product_id_values"] = product_values
+
+        return " AND ".join(clauses), params
+
+    async def list_filtered_for_company(
+        self,
+        company_id: UUID,
+        filters: dict[str, list[str]],
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[Sequence[OrderORM], int]:
+        where_sql, params = self._filter_where(company_id, filters)
+        total_stmt = text(
+            f"""
+            SELECT count(*) AS total
+            FROM orders o
+            JOIN integrations i ON i.id = o.integration_id
+            WHERE {where_sql}
+            """
+        )
+        total = int((await self._session.execute(total_stmt, params)).scalar_one())
+
+        ids_stmt = text(
+            f"""
+            SELECT o.id
+            FROM orders o
+            JOIN integrations i ON i.id = o.integration_id
+            WHERE {where_sql}
+            ORDER BY o.external_created_at DESC NULLS LAST, o.created_at DESC
+            LIMIT :limit OFFSET :offset
+            """
+        )
+        id_params = {**params, "limit": limit, "offset": offset}
+        ids = [row.id for row in (await self._session.execute(ids_stmt, id_params)).all()]
+        if not ids:
+            return [], total
+
+        stmt = (
+            select(OrderORM)
+            .where(OrderORM.id.in_(ids))
+            .order_by(OrderORM.external_created_at.desc().nulls_last(), OrderORM.created_at.desc())
+        )
+        return (await self._session.scalars(stmt)).all(), total
+
+    async def filter_facets_for_company(
+        self,
+        company_id: UUID,
+        filters: dict[str, list[str]],
+        option_limit: int = 40,
+    ) -> list[dict[str, Any]]:
+        facet_defs = [
+            ("integration_id", "Integração", "o.integration_id::text", "i.name"),
+            ("status", "Status", "o.status", "o.status"),
+            ("origin", "Origem", "o.origin", "o.origin"),
+            ("state", "Estado", "o.address -> 'state' ->> 'initials'", "o.address -> 'state' ->> 'initials'"),
+            ("city", "Cidade", "o.address -> 'city' ->> 'name'", "o.address -> 'city' ->> 'name'"),
+        ]
+
+        facets: list[dict[str, Any]] = []
+        for key, label, value_expr, label_expr in facet_defs:
+            where_sql, params = self._filter_where(company_id, filters, exclude=key)
+            stmt = text(
+                f"""
+                SELECT
+                    {value_expr} AS value,
+                    COALESCE({label_expr}, {value_expr}) AS label,
+                    count(*) AS count
+                FROM orders o
+                JOIN integrations i ON i.id = o.integration_id
+                WHERE {where_sql}
+                  AND {value_expr} IS NOT NULL
+                  AND {value_expr} <> ''
+                GROUP BY value, label
+                ORDER BY count DESC, label ASC
+                LIMIT :option_limit
+                """
+            )
+            rows = (await self._session.execute(stmt, {**params, "option_limit": option_limit})).mappings()
+            facets.append({"key": key, "label": label, "options": list(rows)})
+
+        where_sql, params = self._filter_where(company_id, filters, exclude="product_id")
+        product_stmt = text(
+            f"""
+            SELECT
+                product ->> 'id' AS value,
+                COALESCE(product ->> 'name', product ->> 'code', product ->> 'id') AS label,
+                count(DISTINCT o.id) AS count
+            FROM orders o
+            JOIN integrations i ON i.id = o.integration_id
+            CROSS JOIN LATERAL jsonb_array_elements(o.products) AS product
+            WHERE {where_sql}
+              AND product ->> 'id' IS NOT NULL
+              AND product ->> 'id' <> ''
+            GROUP BY value, label
+            ORDER BY count DESC, label ASC
+            LIMIT :option_limit
+            """
+        )
+        product_rows = (
+            await self._session.execute(product_stmt, {**params, "option_limit": option_limit})
+        ).mappings()
+        facets.append({"key": "product_id", "label": "Produto", "options": list(product_rows)})
+        return facets

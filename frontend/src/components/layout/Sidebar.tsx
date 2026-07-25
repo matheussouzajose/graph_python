@@ -19,6 +19,7 @@ import type { AuthUser } from '@/types/api'
 
 const NAV_ITEMS = [
   { to: '/', label: 'Home', icon: LayoutDashboard, end: true },
+  { to: '/pedidos', label: 'Pedidos', icon: ShoppingCart, end: false },
   { to: '/produtos', label: 'Produtos', icon: Package, end: false },
   { to: '/clientes', label: 'Clientes', icon: Users, end: false },
   { to: '/recomendacoes', label: 'Recomendações', icon: Sparkles, end: false },
