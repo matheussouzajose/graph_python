@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
+import { GuestRoute } from '@/components/auth/GuestRoute'
 import { AppShell } from '@/components/layout/AppShell'
 import { HomePage } from '@/pages/HomePage'
 import { OrdersPage } from '@/pages/OrdersPage'
@@ -13,7 +14,14 @@ import { SettingsPage } from '@/pages/SettingsPage'
 export default function App() {
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
+      <Route
+        path="/login"
+        element={
+          <GuestRoute>
+            <LoginPage />
+          </GuestRoute>
+        }
+      />
       <Route
         path="/*"
         element={

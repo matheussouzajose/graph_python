@@ -32,7 +32,7 @@ const SECONDARY_NAV_ITEMS = [
 
 export function Sidebar() {
   const authUser = useAuthUser<AuthUser>()
-  const signOut = useSignOut()
+  const signOut = useSignOut('/login')
   const location = useLocation()
   const [salesOpen, setSalesOpen] = useState(true)
   const salesActive = NAV_ITEMS.some((item) =>

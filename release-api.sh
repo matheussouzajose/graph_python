@@ -7,10 +7,12 @@
 # Requer: docker login registry.msouzajose.tech (uma vez).
 set -euo pipefail
 
+# Embutida no bundle do front em build-time; sobrescreva no ambiente se precisar de outro valor.
+VITE_API_BASE_URL="${VITE_API_BASE_URL:-https://oraculo-grapha-api.msouzajose.tech/api/v1}"
+
 REGISTRY="registry.msouzajose.tech"
 API_IMAGE="${REGISTRY}/oraculo-graph-api"
 FRONTEND_IMAGE="${REGISTRY}/oraculo-graph-frontend"
-VITE_API_BASE_URL="${VITE_API_BASE_URL:-/api/v1}"
 
 # Versão: 1º argumento, senão o SHA curto do commit atual.
 VERSION="${1:-$(git rev-parse --short HEAD)}"

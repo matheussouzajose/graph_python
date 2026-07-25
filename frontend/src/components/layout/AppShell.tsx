@@ -36,7 +36,7 @@ const MOBILE_NAV = [
 
 export function AppShell({ children }: { children: ReactNode }) {
   const location = useLocation()
-  const signOut = useSignOut()
+  const signOut = useSignOut('/login')
   const title = PAGE_TITLES[location.pathname] ?? 'Oráculo'
   const description = PAGE_DESCRIPTIONS[location.pathname]
 
