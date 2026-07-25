@@ -6,10 +6,11 @@ independent progress for multiple resource types (only `"orders"` exists
 today; `"products"`/`"customers"` etc. would each get their own row).
 """
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy import DateTime, ForeignKey, String, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -45,6 +46,13 @@ class IntegrationSyncStateRepository:
 
     async def get(self, integration_id: UUID, resource: str) -> IntegrationSyncStateORM | None:
         return await self._session.get(IntegrationSyncStateORM, (integration_id, resource))
+
+    async def list_all(self) -> Sequence[IntegrationSyncStateORM]:
+        """All checkpoint rows across every integration/resource — the table is
+        one row per (integration_id, resource), small enough to fetch whole for
+        the dashboard's sync-status view rather than adding pagination here."""
+        stmt = select(IntegrationSyncStateORM).order_by(IntegrationSyncStateORM.updated_at.desc())
+        return (await self._session.scalars(stmt)).all()
 
     async def save_cursor(
         self, integration_id: UUID, resource: str, cursor: str | None, status: str

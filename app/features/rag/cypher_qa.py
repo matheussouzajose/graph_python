@@ -26,9 +26,11 @@ são a defesa de fato. Se o Neo4j deste projeto for migrado para Enterprise
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 
 from langchain_neo4j import GraphCypherQAChain, Neo4jGraph
 from langchain_openai import ChatOpenAI
+from neo4j_graphrag.retrievers.text2cypher import extract_cypher
 
 from app.core.config import settings
 from app.core.logger import logger
@@ -153,3 +155,70 @@ def ask_global(question: str) -> dict:
         "generated_query": generated_query,
         "error": None,
     }
+
+
+def ask_global_stream(question: str) -> Iterator[dict]:
+    """Variante em streaming da via GLOBAL. `GraphCypherQAChain.invoke` roda
+    geração de Cypher + execução + síntese da resposta como uma chamada só,
+    sem hook pra transmitir a etapa final token a token — por isso aqui as
+    duas primeiras etapas (`cypher_generation_chain`, execução no grafo) são
+    chamadas diretamente, na mesma ordem e com os mesmos guardrails de
+    `ask_global`, e só a etapa final (`qa_chain`, que é um Runnable LCEL)
+    usa `.stream()` de verdade. Como a query já está em mãos antes de
+    executá-la (diferente de `ask_global`, que só a vê depois do
+    `chain.invoke` completo), também dá pra aplicar `_enforce_limit` aqui —
+    o hardening que o docstring de `_enforce_limit` descreve como pendente."""
+    try:
+        chain = build_cypher_qa_chain()
+    except Exception as e:
+        logger.error("cypher_qa_chain_build_failed", question=question, error=str(e))
+        yield {
+            "type": "error",
+            "message": "Não consegui preparar a consulta ao grafo. Tente novamente.",
+        }
+        return
+
+    try:
+        raw_cypher = chain.cypher_generation_chain.invoke(
+            {"question": question, "examples": None, "schema": chain.graph_schema}
+        )
+        generated_query = extract_cypher(raw_cypher)
+    except Exception as e:
+        logger.error("cypher_generation_failed", question=question, error=str(e))
+        yield {
+            "type": "error",
+            "message": "Não consegui gerar uma consulta para essa pergunta. Tente reformular.",
+        }
+        return
+
+    try:
+        _validate_query_is_read_only(generated_query)
+    except UnsafeCypherQueryError as e:
+        yield {
+            "type": "error",
+            "message": "A consulta gerada foi bloqueada por motivos de segurança.",
+            "generated_query": generated_query,
+        }
+        logger.error("cypher_qa_stream_blocked", question=question, error=str(e))
+        return
+
+    generated_query = _enforce_limit(generated_query)
+
+    try:
+        context = chain.graph.query(generated_query)[:DEFAULT_LIMIT] if generated_query else []
+    except Exception as e:
+        logger.error("cypher_execution_failed", question=question, error=str(e))
+        yield {
+            "type": "error",
+            "message": "A consulta gerada falhou ao rodar no grafo.",
+            "generated_query": generated_query,
+        }
+        return
+
+    yield {"type": "meta", "generated_query": generated_query}
+
+    for chunk in chain.qa_chain.stream({"question": question, "context": context}):
+        if chunk:
+            yield {"type": "token", "text": chunk}
+
+    logger.info("cypher_qa_answered_stream", question=question, generated_query=generated_query)

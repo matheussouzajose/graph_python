@@ -21,13 +21,15 @@ projeto de que `router.py` é sempre o módulo do `APIRouter` do FastAPI (ver
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 
 from openai import OpenAI
 
 from app.core.config import settings
 from app.core.logger import logger
 from app.features.rag.chain import ask as ask_local
-from app.features.rag.cypher_qa import ask_global
+from app.features.rag.chain import ask_stream as ask_local_stream
+from app.features.rag.cypher_qa import ask_global, ask_global_stream
 
 _client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
@@ -91,3 +93,22 @@ def ask(question: str, top_k: int = 5) -> dict:
         "generated_query": None,
         "sources": result["sources"],
     }
+
+
+def ask_stream(question: str, top_k: int = 5) -> Iterator[dict]:
+    """Variante em streaming de `ask` — mesma classificação de rota, mas
+    delega para `ask_local_stream`/`ask_global_stream`, que emitem eventos
+    (`meta`, `token`, `error`) em vez de um dict pronto. `route` sai primeiro
+    para o consumidor já poder mostrar o badge LOCAL/GLOBAL antes de qualquer
+    texto chegar; `done` sempre sai por último, mesmo em caso de erro, pra
+    sinalizar fim de stream."""
+    route = _classify(question)
+    logger.info("query_routed_stream", question=question, route=route)
+    yield {"type": "route", "route": route}
+
+    if route == "GLOBAL":
+        yield from ask_global_stream(question)
+    else:
+        yield from ask_local_stream(question, top_k=top_k)
+
+    yield {"type": "done"}
