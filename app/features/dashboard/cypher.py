@@ -73,9 +73,21 @@ ORDER BY p.pagerank DESC
 LIMIT $limit
 """
 
+# `BOUGHT_WITH` já é uma estatística pré-computada por par de produtos (uma
+# vez só, pelo job de association rules em `graph_algorithms/gds.py`), não
+# por pedido. O `MATCH (o)-[:CONTAINS]->(a)` serve só para confirmar que `a`
+# pertence à empresa — mas por ser um `MATCH` (não um filtro de existência),
+# ele gera uma linha por PEDIDO que contém `a`, multiplicando cada par
+# `BOUGHT_WITH` pelo número de pedidos em que `a` aparece (confirmado ao
+# vivo: produto em 2 pedidos da empresa -> cada par duplicado 2x). `WHERE
+# EXISTS {...}` faz a mesma checagem de posse sem fan-out — mesmo padrão já
+# usado em `rag/retriever.py::VECTOR_SEARCH_PRODUCTS`.
 BOUGHT_TOGETHER_ALL = """
-MATCH (o:Order)-[:BELONGS_TO]->(:Company {id: $company_id})
-MATCH (o)-[:CONTAINS]->(a:Product)-[b:BOUGHT_WITH]->(c:Product)
+MATCH (a:Product)-[b:BOUGHT_WITH]->(c:Product)
+WHERE EXISTS {
+    MATCH (o:Order)-[:BELONGS_TO]->(:Company {id: $company_id})
+    MATCH (o)-[:CONTAINS]->(a)
+}
 RETURN
     a.id AS product_id, a.name AS product_name, a.code AS product_code,
     c.id AS related_product_id, c.name AS related_product_name, c.code AS related_product_code,
@@ -85,8 +97,11 @@ LIMIT $limit
 """
 
 BOUGHT_TOGETHER_FOR_PRODUCT = """
-MATCH (o:Order)-[:BELONGS_TO]->(:Company {id: $company_id})
-MATCH (o)-[:CONTAINS]->(a:Product {id: $product_id})-[b:BOUGHT_WITH]->(c:Product)
+MATCH (a:Product {id: $product_id})-[b:BOUGHT_WITH]->(c:Product)
+WHERE EXISTS {
+    MATCH (o:Order)-[:BELONGS_TO]->(:Company {id: $company_id})
+    MATCH (o)-[:CONTAINS]->(a)
+}
 RETURN
     a.id AS product_id, a.name AS product_name, a.code AS product_code,
     c.id AS related_product_id, c.name AS related_product_name, c.code AS related_product_code,
