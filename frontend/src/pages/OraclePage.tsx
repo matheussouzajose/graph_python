@@ -1,5 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bot, Compass, Copy, MessageSquare, Plus, Send, Sparkles, Square, User } from 'lucide-react'
+import {
+  Bot,
+  ChevronDown,
+  Compass,
+  Copy,
+  MessageSquare,
+  Plus,
+  Send,
+  Sparkles,
+  Square,
+  User,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -219,15 +230,36 @@ function AssistantBubble({ message }: { message: UiChatMessage }) {
 }
 
 function GeneratedQuery({ query }: { query: string }) {
+  const [open, setOpen] = useState(false)
+
   async function copyQuery() {
     await navigator.clipboard.writeText(query)
     toast.success('Cypher copiado')
   }
 
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex items-center gap-1 text-xs text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground"
+      >
+        <ChevronDown className="size-3" />
+        Ver consulta gerada (debug)
+      </button>
+    )
+  }
+
   return (
     <div className="rounded-xl border bg-muted/55">
       <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
-        <p className="text-xs font-medium text-muted-foreground">Cypher gerado</p>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          className="text-xs font-medium text-muted-foreground hover:text-foreground"
+        >
+          Cypher gerado (debug)
+        </button>
         <Button type="button" variant="ghost" size="icon-xs" onClick={copyQuery}>
           <Copy className="size-3.5" />
         </Button>

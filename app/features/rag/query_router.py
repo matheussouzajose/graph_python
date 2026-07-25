@@ -35,9 +35,13 @@ _client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
 CLASSIFIER_PROMPT = """Classifique a pergunta abaixo em uma única palavra:
 - "LOCAL" se pergunta sobre um pedido, cliente ou produto específico,
-ou pede recomendação/similaridade.
+ou pede recomendação/similaridade, SEM precisar contar/somar/ranquear nada.
 - "GLOBAL" se pede contagem, soma, média, comparação, agrupamento,
-ou análise sobre múltiplos registros.
+ranking ou superlativo ("qual/quem mais", "o que mais", "menos"), ou
+análise sobre múltiplos registros — mesmo que a pergunta cite um pedido,
+cliente ou produto específico como filtro/escopo. Exemplo: "qual cliente
+mais comprou esse produto" é GLOBAL (agrupa e conta compras por cliente),
+não LOCAL, mesmo citando um produto específico.
 
 Pergunta: {question}
 
@@ -48,12 +52,26 @@ GLOBAL_KEYWORDS = re.compile(
     r"\b(quantos|quantas|total de|média|media|soma|compare|comparar|por estado|"
     r"por período|periodo|ao longo do tempo|distribuição|distribuicao|percentual|taxa de|"
     r"segmento|segmentos|rfm|campe[oõ]es|leais|em risco|em_risco|novos|hibernando|"
-    r"pagerank|page rank|importantes?|importância|importancia)\b",
+    r"pagerank|page rank|importantes?|importância|importancia|"
+    r"quem mais|quem menos|qual cliente mais|qual produto mais|"
+    r"mais comprou|menos comprou|mais vendeu|menos vendeu|"
+    r"maior número de|maior quantidade|top \d|ranking)\b",
     re.IGNORECASE,
 )
 
 
+# Bypass temporário para testar isoladamente a via GLOBAL (Cypher gerado):
+# a busca vetorial (LOCAL) fica fora de uso por enquanto, sem remover nada
+# do código — `ask_local`/`ask_local_stream`/`hybrid_retrieve` continuam
+# intactos. Voltar a `False` (ou remover este bloco) reativa o roteamento
+# normal por classificação.
+_FORCE_GLOBAL_ROUTE = True
+
+
 def _classify(question: str) -> str:
+    if _FORCE_GLOBAL_ROUTE:
+        return "GLOBAL"
+
     try:
         response = _client.chat.completions.create(
             model=settings.OPENAI_CHAT_MODEL,
