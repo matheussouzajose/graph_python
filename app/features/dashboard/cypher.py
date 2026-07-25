@@ -8,13 +8,15 @@ em `graph_algorithms/gds.py` e `order/graph_cypher.py`).
 """
 
 OVERVIEW_TOTALS = """
-MATCH (o:Order)
+MATCH (o:Order)-[:BELONGS_TO]->(:Company {id: $company_id})
 WITH count(o) AS total_orders,
      sum(coalesce(o.total_value, 0.0)) AS total_revenue,
      avg(o.total_value) AS average_ticket
-OPTIONAL MATCH (:Order)-[:PLACED_BY]->(c:Customer)
+OPTIONAL MATCH (company_order:Order)-[:BELONGS_TO]->(:Company {id: $company_id})
+OPTIONAL MATCH (company_order)-[:PLACED_BY]->(c:Customer)
 WITH total_orders, total_revenue, average_ticket, count(DISTINCT c) AS unique_customers
-OPTIONAL MATCH (:Order)-[:CONTAINS]->(p:Product)
+OPTIONAL MATCH (product_order:Order)-[:BELONGS_TO]->(:Company {id: $company_id})
+OPTIONAL MATCH (product_order)-[:CONTAINS]->(p:Product)
 RETURN
     total_orders,
     total_revenue,
@@ -24,25 +26,26 @@ RETURN
 """
 
 ORDERS_BY_STATUS = """
-MATCH (o:Order)
+MATCH (o:Order)-[:BELONGS_TO]->(:Company {id: $company_id})
 WHERE o.status IS NOT NULL
 RETURN o.status AS status, count(o) AS count
 ORDER BY count DESC
 """
 
 LAST_ALGORITHM_RUN = """
-MATCH (r:AlgorithmRun)
+MATCH (r:AlgorithmRun {company_id: $company_id})
 RETURN max(r.computed_at) AS computed_at
 """
 
 ALGORITHM_RUNS = """
-MATCH (r:AlgorithmRun)
+MATCH (r:AlgorithmRun {company_id: $company_id})
 RETURN r.name AS name, r.computed_at AS computed_at
 ORDER BY r.computed_at DESC
 """
 
 TOP_SELLING_PRODUCTS = """
-MATCH (:Order)-[c:CONTAINS]->(p:Product)
+MATCH (o:Order)-[:BELONGS_TO]->(:Company {id: $company_id})
+MATCH (o)-[c:CONTAINS]->(p:Product)
 WITH p, sum(coalesce(c.requested, 0)) AS quantity_sold
 WHERE quantity_sold > 0
 RETURN p.id AS product_id, p.name AS product_name, p.code AS product_code, quantity_sold
@@ -51,7 +54,8 @@ LIMIT $limit
 """
 
 TOP_REVENUE_PRODUCTS = """
-MATCH (:Order)-[c:CONTAINS]->(p:Product)
+MATCH (o:Order)-[:BELONGS_TO]->(:Company {id: $company_id})
+MATCH (o)-[c:CONTAINS]->(p:Product)
 WITH p, sum(coalesce(c.requested, 0) * coalesce(p.price_promotional, p.price, 0.0)) AS revenue
 WHERE revenue > 0
 RETURN p.id AS product_id, p.name AS product_name, p.code AS product_code, revenue
@@ -60,15 +64,18 @@ LIMIT $limit
 """
 
 TOP_PAGERANK_PRODUCTS = """
-MATCH (p:Product)
+MATCH (o:Order)-[:BELONGS_TO]->(:Company {id: $company_id})
+MATCH (o)-[:CONTAINS]->(p:Product)
 WHERE p.pagerank IS NOT NULL
+WITH DISTINCT p
 RETURN p.id AS product_id, p.name AS product_name, p.code AS product_code, p.pagerank AS pagerank
 ORDER BY p.pagerank DESC
 LIMIT $limit
 """
 
 BOUGHT_TOGETHER_ALL = """
-MATCH (a:Product)-[b:BOUGHT_WITH]->(c:Product)
+MATCH (o:Order)-[:BELONGS_TO]->(:Company {id: $company_id})
+MATCH (o)-[:CONTAINS]->(a:Product)-[b:BOUGHT_WITH]->(c:Product)
 RETURN
     a.id AS product_id, a.name AS product_name, a.code AS product_code,
     c.id AS related_product_id, c.name AS related_product_name, c.code AS related_product_code,
@@ -78,7 +85,8 @@ LIMIT $limit
 """
 
 BOUGHT_TOGETHER_FOR_PRODUCT = """
-MATCH (a:Product {id: $product_id})-[b:BOUGHT_WITH]->(c:Product)
+MATCH (o:Order)-[:BELONGS_TO]->(:Company {id: $company_id})
+MATCH (o)-[:CONTAINS]->(a:Product {id: $product_id})-[b:BOUGHT_WITH]->(c:Product)
 RETURN
     a.id AS product_id, a.name AS product_name, a.code AS product_code,
     c.id AS related_product_id, c.name AS related_product_name, c.code AS related_product_code,
@@ -88,8 +96,10 @@ LIMIT $limit
 """
 
 RFM_SEGMENT_SUMMARY = """
-MATCH (c:Customer)
+MATCH (o:Order)-[:BELONGS_TO]->(:Company {id: $company_id})
+MATCH (o)-[:PLACED_BY]->(c:Customer)
 WHERE c.rfm_segment IS NOT NULL
+WITH DISTINCT c
 RETURN
     c.rfm_segment AS segment,
     count(c) AS customer_count,
@@ -102,9 +112,11 @@ ORDER BY customer_count DESC
 # `$segment` pode ser `None` — nesse caso o filtro é ignorado e retorna todo
 # cliente com RFM já calculado (não-calculado não interessa ao dashboard).
 CUSTOMERS_LIST = """
-MATCH (c:Customer)
+MATCH (o:Order)-[:BELONGS_TO]->(:Company {id: $company_id})
+MATCH (o)-[:PLACED_BY]->(c:Customer)
 WHERE c.rfm_segment IS NOT NULL
   AND ($segment IS NULL OR c.rfm_segment = $segment)
+WITH DISTINCT c
 RETURN
     c.id AS customer_id,
     c.name AS name,
@@ -115,14 +127,18 @@ RETURN
     c.rfm_recency_days AS rfm_recency_days,
     c.rfm_frequency AS rfm_frequency,
     c.rfm_monetary AS rfm_monetary,
-    c.last_order_at AS last_order_at
+    c.last_order_at AS last_order_at,
+    c.city_name AS city_name,
+    c.state_initials AS state_initials
 ORDER BY c.rfm_score DESC
 SKIP $offset LIMIT $limit
 """
 
 CUSTOMER_DETAIL = """
-MATCH (c:Customer {id: $customer_id})
-OPTIONAL MATCH (c)<-[:PLACED_BY]-(:Order)-[:CONTAINS]->(p:Product)
+MATCH (c:Customer {id: $customer_id})<-[:PLACED_BY]-(:Order)
+      -[:BELONGS_TO]->(:Company {id: $company_id})
+OPTIONAL MATCH (c)<-[:PLACED_BY]-(o:Order)-[:BELONGS_TO]->(:Company {id: $company_id})
+OPTIONAL MATCH (o)-[:CONTAINS]->(p:Product)
 WITH c, collect(DISTINCT CASE WHEN p IS NULL THEN NULL
     ELSE {product_id: p.id, name: p.name, code: p.code} END) AS raw_products
 RETURN
@@ -136,5 +152,7 @@ RETURN
     c.rfm_frequency AS rfm_frequency,
     c.rfm_monetary AS rfm_monetary,
     c.last_order_at AS last_order_at,
+    c.city_name AS city_name,
+    c.state_initials AS state_initials,
     [x IN raw_products WHERE x IS NOT NULL] AS products_purchased
 """

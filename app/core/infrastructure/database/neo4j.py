@@ -52,6 +52,7 @@ INDEXES = [
     "CREATE INDEX order_status_idx IF NOT EXISTS FOR (o:Order) ON (o.status)",
     "CREATE INDEX order_created_at_idx IF NOT EXISTS FOR (o:Order) ON (o.created_at)",
     "CREATE INDEX customer_document_idx IF NOT EXISTS FOR (c:Customer) ON (c.document)",
+    "CREATE INDEX customer_state_idx IF NOT EXISTS FOR (c:Customer) ON (c.state_initials)",
     "CREATE INDEX product_name_idx IF NOT EXISTS FOR (p:Product) ON (p.name)",
 ]
 

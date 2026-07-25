@@ -17,6 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.features.integration.orm import IntegrationORM
 from app.features.order.orm import OrderORM
 
 _DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -94,10 +95,37 @@ class OrderRepository:
     async def get(self, order_id: UUID) -> OrderORM | None:
         return await self._session.get(OrderORM, order_id)
 
+    async def get_for_company(self, order_id: UUID, company_id: UUID) -> OrderORM | None:
+        stmt = (
+            select(OrderORM)
+            .join(IntegrationORM, IntegrationORM.id == OrderORM.integration_id)
+            .where(OrderORM.id == order_id, IntegrationORM.company_id == company_id)
+        )
+        return await self._session.scalar(stmt)
+
     async def list(
         self, integration_id: UUID | None = None, limit: int = 100, offset: int = 0
     ) -> Sequence[OrderORM]:
         stmt = select(OrderORM).order_by(OrderORM.created_at.desc()).limit(limit).offset(offset)
+        if integration_id is not None:
+            stmt = stmt.where(OrderORM.integration_id == integration_id)
+        return (await self._session.scalars(stmt)).all()
+
+    async def list_for_company(
+        self,
+        company_id: UUID,
+        integration_id: UUID | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> Sequence[OrderORM]:
+        stmt = (
+            select(OrderORM)
+            .join(IntegrationORM, IntegrationORM.id == OrderORM.integration_id)
+            .where(IntegrationORM.company_id == company_id)
+            .order_by(OrderORM.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
         if integration_id is not None:
             stmt = stmt.where(OrderORM.integration_id == integration_id)
         return (await self._session.scalars(stmt)).all()

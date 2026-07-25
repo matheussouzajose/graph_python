@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Loader2, Package, Search } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Loader2, Package, Search, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -20,22 +19,16 @@ import {
 } from '@/components/ui/select'
 import { DataTable } from '@/components/shared/DataTable'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { PageHeader } from '@/components/shared/PageHeader'
+import { SectionCard } from '@/components/shared/SectionCard'
 import { SegmentBadge } from '@/components/shared/SegmentBadge'
 import { RelativeTime } from '@/components/shared/RelativeTime'
 import { RecommendationResultsTable } from '@/components/shared/RecommendationResultsTable'
 import { useCustomer, useCustomers, useRfmSummary } from '@/hooks/use-dashboard'
 import { useRecommendByCustomer } from '@/hooks/use-actions'
 import { formatCurrency, formatNumber } from '@/lib/format'
+import { SEGMENT_LABELS, getSegmentColor, getSegmentLabel } from '@/lib/segments'
 import type { CustomerSummary } from '@/types/api'
-
-const SEGMENT_LABELS: Record<string, string> = {
-  campeoes: 'Campeões',
-  leais: 'Leais',
-  novos: 'Novos',
-  em_risco: 'Em risco',
-  hibernando: 'Hibernando',
-  potencial: 'Potencial',
-}
 
 export function CustomersPage() {
   const [segment, setSegment] = useState<string>('all')
@@ -45,8 +38,10 @@ export function CustomersPage() {
   const customers = useCustomers(segment === 'all' ? undefined : segment, 100, 0)
 
   const chartData = (rfmSummary.data ?? []).map((row) => ({
-    segment: SEGMENT_LABELS[row.segment] ?? row.segment,
+    segmentKey: row.segment,
+    segment: getSegmentLabel(row.segment),
     customer_count: row.customer_count,
+    color: getSegmentColor(row.segment)?.chart ?? '#64748b',
   }))
 
   const columns: ColumnDef<CustomerSummary, any>[] = [
@@ -63,6 +58,15 @@ export function CustomersPage() {
       cell: ({ getValue }) => formatCurrency(getValue<number>()),
     },
     {
+      id: 'location',
+      header: 'Local',
+      accessorFn: (row) => [row.city_name, row.state_initials].filter(Boolean).join('/'),
+      cell: ({ getValue }) => {
+        const value = getValue<string>()
+        return value ? value : <span className="text-muted-foreground">—</span>
+      },
+    },
+    {
       accessorKey: 'last_order_at',
       header: 'Última compra',
       cell: ({ getValue }) => <RelativeTime value={getValue<string>()} />,
@@ -71,12 +75,19 @@ export function CustomersPage() {
 
   return (
     <div className="space-y-6">
+      <PageHeader
+        title="Clientes"
+        description="Analise segmentação RFM, concentração de clientes e oportunidades individuais."
+        icon={Users}
+      />
+
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-sm font-medium">Distribuição por segmento RFM</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <SectionCard
+          title="Distribuição por segmento RFM"
+          description="As cores do gráfico seguem os mesmos labels usados na lista de clientes."
+          icon={Users}
+          className="lg:col-span-2"
+        >
             {rfmSummary.isLoading ? (
               <div className="h-56 animate-pulse rounded-md bg-muted" />
             ) : chartData.length === 0 ? (
@@ -86,38 +97,57 @@ export function CustomersPage() {
               />
             ) : (
               <ResponsiveContainer width="100%" height={230}>
-                <BarChart data={chartData}>
+                <BarChart data={chartData} margin={{ top: 8, right: 8, bottom: 4, left: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="segment" fontSize={12} />
+                  <XAxis
+                    dataKey="segment"
+                    interval={0}
+                    fontSize={12}
+                    tick={(props) => <SegmentAxisTick {...props} data={chartData} />}
+                  />
                   <YAxis allowDecimals={false} fontSize={12} />
                   <Tooltip formatter={(value) => [formatNumber(Number(value)), 'Clientes']} />
-                  <Bar dataKey="customer_count" fill="var(--primary)" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="customer_count" radius={[5, 5, 0, 0]}>
+                    {chartData.map((entry) => (
+                      <Cell key={entry.segmentKey} fill={entry.color} />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm font-medium">Resumo por segmento</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
+        </SectionCard>
+        <SectionCard
+          title="Resumo por segmento"
+          description="Clique em um segmento para filtrar a lista."
+          contentClassName="space-y-2"
+        >
             {(rfmSummary.data ?? []).map((row) => (
-              <div key={row.segment} className="flex items-center justify-between text-sm">
-                <SegmentBadge segment={row.segment} />
+              <button
+                key={row.segment}
+                type="button"
+                onClick={() => setSegment(row.segment)}
+                className="flex w-full items-center justify-between rounded-lg border bg-card px-3 py-2 text-left text-sm transition hover:bg-muted"
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className="size-2.5 rounded-full"
+                    style={{ backgroundColor: getSegmentColor(row.segment)?.chart ?? '#64748b' }}
+                  />
+                  <SegmentBadge segment={row.segment} />
+                </div>
                 <span className="font-medium">{formatNumber(row.customer_count)}</span>
-              </div>
+              </button>
             ))}
             {!rfmSummary.isLoading && (rfmSummary.data ?? []).length === 0 && (
               <p className="text-sm text-muted-foreground">Sem dados ainda.</p>
             )}
-          </CardContent>
-        </Card>
+        </SectionCard>
       </div>
 
-      <Card>
-        <CardHeader className="flex-row items-center justify-between">
-          <CardTitle className="text-sm font-medium">Clientes</CardTitle>
+      <SectionCard
+        title="Lista de clientes"
+        description="Abra um cliente para ver detalhes, histórico e recomendações."
+        actions={
           <Select value={segment} onValueChange={setSegment}>
             <SelectTrigger className="w-48">
               <SelectValue />
@@ -131,8 +161,8 @@ export function CustomersPage() {
               ))}
             </SelectContent>
           </Select>
-        </CardHeader>
-        <CardContent>
+        }
+      >
           <DataTable
             columns={columns}
             data={customers.data}
@@ -141,15 +171,42 @@ export function CustomersPage() {
             emptyDescription='Rode "Rodar algoritmos" na Home para segmentar os clientes.'
             getRowId={(row) => row.customer_id}
             onRowClick={(row) => setSelectedCustomerId(row.customer_id)}
+            searchable
+            searchPlaceholder="Buscar cliente, cidade ou segmento..."
           />
-        </CardContent>
-      </Card>
+      </SectionCard>
 
       <CustomerDetailSheet
         customerId={selectedCustomerId}
         onOpenChange={(open) => !open && setSelectedCustomerId(null)}
       />
     </div>
+  )
+}
+
+function SegmentAxisTick({
+  x,
+  y,
+  payload,
+  data,
+}: {
+  x?: string | number
+  y?: string | number
+  payload?: { value: string }
+  data: { segment: string; color: string }[]
+}) {
+  const item = data.find((entry) => entry.segment === payload?.value)
+  return (
+    <text
+      x={x}
+      y={y}
+      dy={14}
+      textAnchor="middle"
+      fill={item?.color ?? 'currentColor'}
+      className="text-[11px] font-medium"
+    >
+      {payload?.value}
+    </text>
   )
 }
 
@@ -179,22 +236,30 @@ function CustomerDetailSheet({
           ) : customer.data ? (
             <>
               <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-md border p-3">
+                <div className="rounded-lg border bg-card p-3 shadow-sm">
                   <p className="text-xs text-muted-foreground">Segmento</p>
                   <SegmentBadge segment={customer.data.rfm_segment} />
                 </div>
-                <div className="rounded-md border p-3">
+                <div className="rounded-lg border bg-card p-3 shadow-sm">
                   <p className="text-xs text-muted-foreground">Score RFM</p>
                   <p className="text-sm font-medium">{customer.data.rfm_score ?? '—'}</p>
                 </div>
-                <div className="rounded-md border p-3">
+                <div className="rounded-lg border bg-card p-3 shadow-sm">
                   <p className="text-xs text-muted-foreground">Valor total</p>
                   <p className="text-sm font-medium">{formatCurrency(customer.data.rfm_monetary)}</p>
                 </div>
-                <div className="rounded-md border p-3">
+                <div className="rounded-lg border bg-card p-3 shadow-sm">
                   <p className="text-xs text-muted-foreground">Última compra</p>
                   <p className="text-sm font-medium">
                     <RelativeTime value={customer.data.last_order_at} />
+                  </p>
+                </div>
+                <div className="rounded-lg border bg-card p-3 shadow-sm">
+                  <p className="text-xs text-muted-foreground">Localização</p>
+                  <p className="text-sm font-medium">
+                    {[customer.data.city_name, customer.data.state_initials]
+                      .filter(Boolean)
+                      .join('/') || '—'}
                   </p>
                 </div>
               </div>

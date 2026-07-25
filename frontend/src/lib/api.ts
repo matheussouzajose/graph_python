@@ -5,6 +5,8 @@ import type {
   CustomerDetail,
   CustomerSummary,
   Integration,
+  IntegrationUpdateInput,
+  LoginResponse,
   OracleStreamEvent,
   Overview,
   RecommendationResult,
@@ -15,6 +17,7 @@ import type {
   TopSellingProduct,
   TriggerResponse,
 } from '@/types/api'
+import { clearStoredAccessToken, getStoredAccessToken } from '@/lib/auth-token'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000/api/v1'
 
@@ -28,15 +31,20 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getStoredAccessToken()
   const response = await fetch(`${BASE_URL}${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...init?.headers,
     },
   })
 
   if (!response.ok) {
+    if (response.status === 401) {
+      clearStoredAccessToken()
+    }
     const body = await response.text()
     let message = body
     try {
@@ -53,6 +61,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   return (await response.json()) as T
 }
+
+export const login = (email: string, password: string) =>
+  request<LoginResponse>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  })
 
 function qs(params: Record<string, string | number | boolean | null | undefined>): string {
   const search = new URLSearchParams()
@@ -96,6 +110,15 @@ export const getSyncStatus = () => request<SyncStatus>('/dashboard/sync-status')
 export const getCompanies = () => request<Company[]>('/companies')
 
 export const getIntegrations = () => request<Integration[]>('/integrations')
+
+export const updateIntegration = (integrationId: string, data: IntegrationUpdateInput) =>
+  request<Integration>(`/integrations/${integrationId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+
+export const deleteIntegration = (integrationId: string) =>
+  request<void>(`/integrations/${integrationId}`, { method: 'DELETE' })
 
 // Ações (jobs em background / triggers)
 export const syncIntegration = (integrationId: string) =>
@@ -147,7 +170,12 @@ export async function streamOracleAsk(
 ): Promise<void> {
   const response = await fetch(`${BASE_URL}/rag/ask/stream`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(getStoredAccessToken()
+        ? { Authorization: `Bearer ${getStoredAccessToken()}` }
+        : {}),
+    },
     body: JSON.stringify({ question, top_k: topK }),
     signal,
   })

@@ -73,12 +73,12 @@ def _classify(question: str) -> str:
     return "GLOBAL" if GLOBAL_KEYWORDS.search(question) else "LOCAL"
 
 
-def ask(question: str, top_k: int = 5) -> dict:
+def ask(question: str, top_k: int = 5, company_id: str | None = None) -> dict:
     route = _classify(question)
     logger.info("query_routed", question=question, route=route)
 
     if route == "GLOBAL":
-        result = ask_global(question)
+        result = ask_global(question, company_id=company_id)
         return {
             "route": "GLOBAL",
             "answer": result["answer"],
@@ -86,7 +86,7 @@ def ask(question: str, top_k: int = 5) -> dict:
             "sources": None,
         }
 
-    result = ask_local(question, top_k=top_k)
+    result = ask_local(question, top_k=top_k, company_id=company_id)
     return {
         "route": "LOCAL",
         "answer": result["answer"],
@@ -95,7 +95,7 @@ def ask(question: str, top_k: int = 5) -> dict:
     }
 
 
-def ask_stream(question: str, top_k: int = 5) -> Iterator[dict]:
+def ask_stream(question: str, top_k: int = 5, company_id: str | None = None) -> Iterator[dict]:
     """Variante em streaming de `ask` — mesma classificação de rota, mas
     delega para `ask_local_stream`/`ask_global_stream`, que emitem eventos
     (`meta`, `token`, `error`) em vez de um dict pronto. `route` sai primeiro
@@ -107,8 +107,8 @@ def ask_stream(question: str, top_k: int = 5) -> Iterator[dict]:
     yield {"type": "route", "route": route}
 
     if route == "GLOBAL":
-        yield from ask_global_stream(question)
+        yield from ask_global_stream(question, company_id=company_id)
     else:
-        yield from ask_local_stream(question, top_k=top_k)
+        yield from ask_local_stream(question, top_k=top_k, company_id=company_id)
 
     yield {"type": "done"}

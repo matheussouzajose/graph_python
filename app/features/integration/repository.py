@@ -36,6 +36,15 @@ class IntegrationRepository:
     async def get(self, integration_id: UUID) -> IntegrationORM | None:
         return await self._session.get(IntegrationORM, integration_id)
 
+    async def get_for_company(
+        self, integration_id: UUID, company_id: UUID
+    ) -> IntegrationORM | None:
+        stmt = select(IntegrationORM).where(
+            IntegrationORM.id == integration_id,
+            IntegrationORM.company_id == company_id,
+        )
+        return await self._session.scalar(stmt)
+
     async def get_by_company_and_provider(
         self, company_id: UUID, provider: str
     ) -> IntegrationORM | None:

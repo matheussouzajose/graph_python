@@ -67,6 +67,13 @@ def _format_product_context(ctx: dict) -> str:
     lines.append(
         f"  Produtos relacionados: {', '.join(ctx.get('similar_products') or []) or 'nenhum'}"
     )
+    buyers = ctx.get("buyers") or []
+    lines.append(f"  Clientes que compraram: {', '.join(buyers) if buyers else 'nenhum'}")
+    order_codes = ctx.get("recent_order_codes") or []
+    if order_codes:
+        lines.append(
+            f"  Pedidos recentes que contêm este produto: {', '.join(map(str, order_codes))}"
+        )
     if pagerank is not None:
         lines.append(f"  Popularidade na rede de compras (pagerank): {pagerank:.4f}")
     lines.append(f"  Score de recuperação: {similarity_score:.3f}")
@@ -74,14 +81,40 @@ def _format_product_context(ctx: dict) -> str:
     return "\n".join(lines)
 
 
+def _format_customer_context(ctx: dict) -> str:
+    monetary = ctx.get("rfm_monetary") or 0
+    similarity_score = ctx.get("similarity_score") or 0
+    location = ", ".join(filter(None, [ctx.get("city_name"), ctx.get("state_initials")]))
+
+    lines = [
+        f"- Cliente: {ctx.get('customer_name')}",
+        f"  Segmento RFM: {ctx.get('rfm_segment')} (score {ctx.get('rfm_score')})",
+        f"  Pedidos feitos: {ctx.get('rfm_frequency')}, total gasto: R$ {monetary:.2f}, "
+        f"última compra há {ctx.get('rfm_recency_days')} dia(s)",
+    ]
+    if location:
+        lines.append(f"  Localização: {location}")
+    if ctx.get("community") is not None:
+        lines.append(f"  Comunidade de clientes: {ctx.get('community')}")
+    products = ctx.get("products") or []
+    lines.append(f"  Produtos mais comprados: {', '.join(products) if products else 'nenhum'}")
+    lines.append(f"  Score de recuperação: {similarity_score:.3f}")
+
+    return "\n".join(lines)
+
+
+_CONTEXT_FORMATTERS = {
+    "product": _format_product_context,
+    "customer": _format_customer_context,
+}
+
+
 def _format_context(contexts: list[dict]) -> str:
     if not contexts:
-        return "Nenhum pedido ou produto relevante encontrado."
+        return "Nenhum pedido, produto ou cliente relevante encontrado."
 
     blocks = [
-        _format_product_context(ctx)
-        if ctx.get("context_type") == "product"
-        else _format_order_context(ctx)
+        _CONTEXT_FORMATTERS.get(ctx.get("context_type"), _format_order_context)(ctx)
         for ctx in contexts
     ]
 
@@ -103,14 +136,15 @@ def _build_sources(contexts: list[dict]) -> list[dict]:
         {
             "order_code": c.get("order_code"),
             "product_code": c.get("product_code"),
+            "customer_name": c.get("customer_name"),
             "score": c.get("similarity_score"),
         }
         for c in contexts
     ]
 
 
-def ask(question: str, top_k: int = 5) -> dict:
-    contexts = hybrid_retrieve(question, top_k=top_k)
+def ask(question: str, top_k: int = 5, company_id: str | None = None) -> dict:
+    contexts = hybrid_retrieve(question, top_k=top_k, company_id=company_id)
     formatted_context = _format_context(contexts)
 
     response = _client.chat.completions.create(
@@ -128,12 +162,12 @@ def ask(question: str, top_k: int = 5) -> dict:
     }
 
 
-def ask_stream(question: str, top_k: int = 5) -> Iterator[dict]:
+def ask_stream(question: str, top_k: int = 5, company_id: str | None = None) -> Iterator[dict]:
     """Variante em streaming de `ask`. A recuperação (`hybrid_retrieve`) não é
     token a token — só a geração da resposta final é, então `sources` sai
     inteiro num único evento `meta` antes do primeiro `token`, permitindo o
     consumidor já renderizar as fontes enquanto o texto ainda está chegando."""
-    contexts = hybrid_retrieve(question, top_k=top_k)
+    contexts = hybrid_retrieve(question, top_k=top_k, company_id=company_id)
     formatted_context = _format_context(contexts)
 
     yield {"type": "meta", "sources": _build_sources(contexts)}

@@ -1,13 +1,17 @@
 import json
 from collections.abc import AsyncIterator
+from typing import Annotated
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
 from app.features.rag.schemas import AskRequest, AskResponse
 from app.features.rag.service import RagService
+from app.features.user.schemas import CurrentUser
+from app.features.user.security import get_current_user
 
 router = APIRouter(prefix="/rag", tags=["rag"])
+CurrentUserDep = Annotated[CurrentUser, Depends(get_current_user)]
 
 
 def get_rag_service() -> RagService:
@@ -15,7 +19,7 @@ def get_rag_service() -> RagService:
 
 
 @router.post("/ask", response_model=AskResponse)
-async def ask(request: AskRequest) -> AskResponse:
+async def ask(request: AskRequest, current_user: CurrentUserDep) -> AskResponse:
     """Pergunta em linguagem natural ao Graph RAG. Roteia automaticamente
     entre busca vetorial local (LOCAL) e Cypher gerado dinamicamente pelo
     LLM para perguntas agregadas (GLOBAL) — ver `query_router.py`.
@@ -24,12 +28,14 @@ async def ask(request: AskRequest) -> AskResponse:
     `/embeddings/run`, esta é uma consulta pontual pensada para responder
     dentro do próprio request."""
     service = get_rag_service()
-    result = await service.ask(request.question, request.top_k)
+    result = await service.ask(
+        request.question, request.top_k, str(current_user.external_company_id)
+    )
     return AskResponse.model_validate(result)
 
 
 @router.post("/ask/stream")
-async def ask_stream(request: AskRequest) -> StreamingResponse:
+async def ask_stream(request: AskRequest, current_user: CurrentUserDep) -> StreamingResponse:
     """Mesma pergunta de `/ask`, mas respondendo via Server-Sent Events
     conforme os tokens chegam da OpenAI, em vez de esperar a resposta
     inteira. Endpoint separado (não um parâmetro `stream=true` em `/ask`)
@@ -52,7 +58,9 @@ async def ask_stream(request: AskRequest) -> StreamingResponse:
     service = get_rag_service()
 
     async def event_stream() -> AsyncIterator[str]:
-        async for event in service.ask_stream(request.question, request.top_k):
+        async for event in service.ask_stream(
+            request.question, request.top_k, str(current_user.external_company_id)
+        ):
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(

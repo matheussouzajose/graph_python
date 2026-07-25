@@ -1,6 +1,6 @@
 """
-Constrói a representação textual de cada Order/Product que vai virar
-embedding. Essa etapa é o que conecta a estrutura de grafo ao mundo de
+Constrói a representação textual de cada Order/Product/Customer que vai
+virar embedding. Essa etapa é o que conecta a estrutura de grafo ao mundo de
 busca vetorial — sem texto bem escrito aqui, a busca semântica do RAG fica
 ruim mesmo com o grafo bem modelado.
 """
@@ -66,5 +66,35 @@ def build_product_text(product_summary: dict) -> str:
         parts.append(f"Preço: R$ {product_summary['price']:.2f}.")
     if product_summary.get("price_promotional"):
         parts.append(f"Preço promocional: R$ {product_summary['price_promotional']:.2f}.")
+
+    return " ".join(parts)
+
+
+def build_customer_text(customer_summary: dict) -> str:
+    """`rfm_*`/`city_name`/`state_initials` vêm de `run_customer_rfm` — se o
+    RFM ainda não rodou pra esse cliente, essas partes simplesmente não
+    entram no texto (cliente ainda vira buscável por nome/produtos)."""
+    parts = [f"Cliente: {customer_summary.get('name')}."]
+
+    segment = customer_summary.get("rfm_segment")
+    if segment:
+        parts.append(f"Segmento RFM: {segment} (score {customer_summary.get('rfm_score')}).")
+
+    frequency = customer_summary.get("rfm_frequency")
+    if frequency is not None:
+        monetary = customer_summary.get("rfm_monetary") or 0
+        recency_days = customer_summary.get("rfm_recency_days")
+        parts.append(
+            f"Fez {frequency} pedido(s), totalizando R$ {monetary:.2f} em compras, "
+            f"última compra há {recency_days} dia(s)."
+        )
+
+    if customer_summary.get("city_name"):
+        state_initials = customer_summary.get("state_initials") or ""
+        parts.append(f"Localização: {customer_summary.get('city_name')}/{state_initials}.")
+
+    products = customer_summary.get("product_names") or []
+    if products:
+        parts.append(f"Produtos mais comprados: {', '.join(products)}.")
 
     return " ".join(parts)

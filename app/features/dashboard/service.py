@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -55,16 +56,25 @@ class DashboardService:
         self._integration_repository = IntegrationRepository(session)
         self._sync_state_repository = IntegrationSyncStateRepository(session)
 
-    async def get_overview(self) -> OverviewResponse:
+    async def get_overview(self, company_id: UUID, external_company_id: UUID) -> OverviewResponse:
+        graph_company_id = str(external_company_id)
         totals_rows, status_rows, last_run_rows, sync_states = await asyncio.gather(
-            asyncio.to_thread(run_query, cypher.OVERVIEW_TOTALS),
-            asyncio.to_thread(run_query, cypher.ORDERS_BY_STATUS),
-            asyncio.to_thread(run_query, cypher.LAST_ALGORITHM_RUN),
+            asyncio.to_thread(run_query, cypher.OVERVIEW_TOTALS, {"company_id": graph_company_id}),
+            asyncio.to_thread(run_query, cypher.ORDERS_BY_STATUS, {"company_id": graph_company_id}),
+            asyncio.to_thread(
+                run_query, cypher.LAST_ALGORITHM_RUN, {"company_id": graph_company_id}
+            ),
             self._sync_state_repository.list_all(),
         )
         totals = totals_rows[0] if totals_rows else {}
+        integrations = await self._integration_repository.list(company_id=company_id, limit=1000)
+        integration_ids = {integration.id for integration in integrations}
         last_order_sync_at = max(
-            (state.last_synced_at for state in sync_states if state.last_synced_at is not None),
+            (
+                state.last_synced_at
+                for state in sync_states
+                if state.integration_id in integration_ids and state.last_synced_at is not None
+            ),
             default=None,
         )
         last_algorithms_run_at = (
@@ -84,8 +94,14 @@ class DashboardService:
             last_algorithms_run_at=last_algorithms_run_at,
         )
 
-    async def top_selling_products(self, limit: int = 10) -> list[TopSellingProduct]:
-        rows = await asyncio.to_thread(run_query, cypher.TOP_SELLING_PRODUCTS, {"limit": limit})
+    async def top_selling_products(
+        self, external_company_id: UUID, limit: int = 10
+    ) -> list[TopSellingProduct]:
+        rows = await asyncio.to_thread(
+            run_query,
+            cypher.TOP_SELLING_PRODUCTS,
+            {"company_id": str(external_company_id), "limit": limit},
+        )
         return [
             TopSellingProduct(
                 product_id=str(row["product_id"]),
@@ -96,8 +112,14 @@ class DashboardService:
             for row in rows
         ]
 
-    async def top_revenue_products(self, limit: int = 10) -> list[TopRevenueProduct]:
-        rows = await asyncio.to_thread(run_query, cypher.TOP_REVENUE_PRODUCTS, {"limit": limit})
+    async def top_revenue_products(
+        self, external_company_id: UUID, limit: int = 10
+    ) -> list[TopRevenueProduct]:
+        rows = await asyncio.to_thread(
+            run_query,
+            cypher.TOP_REVENUE_PRODUCTS,
+            {"company_id": str(external_company_id), "limit": limit},
+        )
         return [
             TopRevenueProduct(
                 product_id=str(row["product_id"]),
@@ -108,8 +130,14 @@ class DashboardService:
             for row in rows
         ]
 
-    async def top_pagerank_products(self, limit: int = 10) -> list[TopPageRankProduct]:
-        rows = await asyncio.to_thread(run_query, cypher.TOP_PAGERANK_PRODUCTS, {"limit": limit})
+    async def top_pagerank_products(
+        self, external_company_id: UUID, limit: int = 10
+    ) -> list[TopPageRankProduct]:
+        rows = await asyncio.to_thread(
+            run_query,
+            cypher.TOP_PAGERANK_PRODUCTS,
+            {"company_id": str(external_company_id), "limit": limit},
+        )
         return [
             TopPageRankProduct(
                 product_id=str(row["product_id"]),
@@ -121,18 +149,20 @@ class DashboardService:
         ]
 
     async def bought_together(
-        self, product_id: str | None = None, limit: int = 10
+        self, external_company_id: UUID, product_id: str | None = None, limit: int = 10
     ) -> list[BoughtTogetherPair]:
+        company_id = str(external_company_id)
         if product_id:
             query, params = (
                 cypher.BOUGHT_TOGETHER_FOR_PRODUCT,
                 {
+                    "company_id": company_id,
                     "product_id": product_id,
                     "limit": limit,
                 },
             )
         else:
-            query, params = cypher.BOUGHT_TOGETHER_ALL, {"limit": limit}
+            query, params = cypher.BOUGHT_TOGETHER_ALL, {"company_id": company_id, "limit": limit}
         rows = await asyncio.to_thread(run_query, query, params)
         return [
             BoughtTogetherPair(
@@ -149,17 +179,30 @@ class DashboardService:
             for row in rows
         ]
 
-    async def rfm_summary(self) -> list[RfmSegmentSummary]:
-        rows = await asyncio.to_thread(run_query, cypher.RFM_SEGMENT_SUMMARY)
+    async def rfm_summary(self, external_company_id: UUID) -> list[RfmSegmentSummary]:
+        rows = await asyncio.to_thread(
+            run_query,
+            cypher.RFM_SEGMENT_SUMMARY,
+            {"company_id": str(external_company_id)},
+        )
         return [RfmSegmentSummary(**row) for row in rows]
 
     async def list_customers(
-        self, segment: str | None = None, limit: int = 50, offset: int = 0
+        self,
+        external_company_id: UUID,
+        segment: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
     ) -> list[CustomerSummary]:
         rows = await asyncio.to_thread(
             run_query,
             cypher.CUSTOMERS_LIST,
-            {"segment": segment, "limit": limit, "offset": offset},
+            {
+                "company_id": str(external_company_id),
+                "segment": segment,
+                "limit": limit,
+                "offset": offset,
+            },
         )
         return [
             CustomerSummary(
@@ -173,13 +216,19 @@ class DashboardService:
                 rfm_frequency=row["rfm_frequency"],
                 rfm_monetary=row["rfm_monetary"],
                 last_order_at=_native_dt(row["last_order_at"]),
+                city_name=row["city_name"],
+                state_initials=row["state_initials"],
             )
             for row in rows
         ]
 
-    async def get_customer(self, customer_id: str) -> CustomerDetail | None:
+    async def get_customer(
+        self, external_company_id: UUID, customer_id: str
+    ) -> CustomerDetail | None:
         rows = await asyncio.to_thread(
-            run_query, cypher.CUSTOMER_DETAIL, {"customer_id": customer_id}
+            run_query,
+            cypher.CUSTOMER_DETAIL,
+            {"company_id": str(external_company_id), "customer_id": customer_id},
         )
         if not rows:
             return None
@@ -197,6 +246,8 @@ class DashboardService:
             rfm_frequency=row["rfm_frequency"],
             rfm_monetary=row["rfm_monetary"],
             last_order_at=_native_dt(row["last_order_at"]),
+            city_name=row["city_name"],
+            state_initials=row["state_initials"],
             products_purchased=[
                 CustomerPurchasedProduct(
                     product_id=str(product["product_id"]),
@@ -207,14 +258,16 @@ class DashboardService:
             ],
         )
 
-    async def sync_status(self) -> SyncStatusResponse:
+    async def sync_status(self, company_id: UUID, external_company_id: UUID) -> SyncStatusResponse:
         # `list_all()` and `list()` both use `self._session` — AsyncSession
         # forbids concurrent operations on the same session, so these two
         # stay sequential; only the Neo4j call (its own driver/connection)
         # can run alongside them.
         sync_states = await self._sync_state_repository.list_all()
-        integrations = await self._integration_repository.list(limit=1000)
-        algorithm_run_rows = await asyncio.to_thread(run_query, cypher.ALGORITHM_RUNS)
+        integrations = await self._integration_repository.list(company_id=company_id, limit=1000)
+        algorithm_run_rows = await asyncio.to_thread(
+            run_query, cypher.ALGORITHM_RUNS, {"company_id": str(external_company_id)}
+        )
         integrations_by_id = {integration.id: integration for integration in integrations}
 
         integration_statuses = []

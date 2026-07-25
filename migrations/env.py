@@ -21,6 +21,7 @@ import app.features.company.orm  # noqa: F401,E402
 import app.features.integration.orm  # noqa: F401,E402
 import app.features.integration.sync_state  # noqa: F401,E402
 import app.features.order.orm  # noqa: F401,E402
+import app.features.user.orm  # noqa: F401,E402
 from app.core.config import settings
 from app.core.infrastructure.database.base import Base
 

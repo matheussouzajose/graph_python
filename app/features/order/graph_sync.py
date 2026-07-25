@@ -145,6 +145,7 @@ async def _flush_row_by_row(query: str, rows: list[dict[str, Any]], label: str) 
 
 async def run_graph_sync(
     integration_id: UUID | None = None,
+    company_id: UUID | None = None,
     page_size: int = DEFAULT_PAGE_SIZE,
     batch_size: int = DEFAULT_BATCH_SIZE,
 ) -> dict[str, int]:
@@ -164,9 +165,18 @@ async def run_graph_sync(
 
         while True:
             async with AsyncSessionFactory() as session:
-                orders = await OrderRepository(session).list(
-                    integration_id=integration_id, limit=page_size, offset=offset
-                )
+                repository = OrderRepository(session)
+                if company_id is None:
+                    orders = await repository.list(
+                        integration_id=integration_id, limit=page_size, offset=offset
+                    )
+                else:
+                    orders = await repository.list_for_company(
+                        company_id=company_id,
+                        integration_id=integration_id,
+                        limit=page_size,
+                        offset=offset,
+                    )
             if not orders:
                 break
 

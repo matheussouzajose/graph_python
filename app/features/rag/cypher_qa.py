@@ -58,6 +58,22 @@ def _validate_query_is_read_only(cypher_query: str) -> None:
         )
 
 
+def _validate_query_is_company_scoped(cypher_query: str, company_id: str) -> None:
+    if company_id not in cypher_query or "BELONGS_TO" not in cypher_query:
+        logger.error("unscoped_cypher_blocked", query=cypher_query, company_id=company_id)
+        raise UnsafeCypherQueryError("A query gerada não continha o filtro obrigatório de empresa.")
+
+
+def _scoped_question(question: str, company_id: str) -> str:
+    return (
+        f"{question}\n\n"
+        "Restrição obrigatória de segurança: responda somente com dados da "
+        f"empresa Neo4j Company.id = '{company_id}'. Toda consulta Cypher deve "
+        "filtrar pedidos com o padrão "
+        f"(o:Order)-[:BELONGS_TO]->(:Company {{id: '{company_id}'}})."
+    )
+
+
 def _enforce_limit(cypher_query: str, max_rows: int = DEFAULT_LIMIT) -> str:
     """
     Injeta LIMIT se a query gerada não tiver um.
@@ -110,54 +126,46 @@ def build_cypher_qa_chain() -> GraphCypherQAChain:
     return chain
 
 
-def ask_global(question: str) -> dict:
+def ask_global(question: str, company_id: str | None = None) -> dict:
     """
-    Entry point da via "global". Intercepta a query gerada antes de confiar
-    no resultado — o LangChain não expõe um hook nativo de "valide antes de
-    rodar", então fazemos isso reexecutando a validação sobre a query
-    capturada em intermediate_steps.
+    Entry point não-streaming da via GLOBAL. Consome `ask_global_stream` e
+    junta os tokens numa resposta só, em vez de reimplementar geração ->
+    validação -> execução -> síntese uma segunda vez via
+    `GraphCypherQAChain.invoke()` direto — o `.invoke()` roda essas quatro
+    etapas como uma caixa preta só, então qualquer falha (build da chain,
+    Cypher com erro de sintaxe, execução falhando no Neo4j, guardrail de
+    segurança) virava a mesma exceção genérica e a mesma mensagem
+    ("não consegui gerar uma consulta segura"), mesmo quando o problema não
+    tinha nada de segurança — só um Cypher malformado, por exemplo.
+    `ask_global_stream` já expõe cada etapa com sua própria mensagem de erro;
+    reusar essa lógica em vez de duplicá-la é o que corrige isso aqui.
     """
-    try:
-        chain = build_cypher_qa_chain()
-        result = chain.invoke({"query": question})
-    except Exception as e:
-        logger.error("cypher_qa_chain_failed", question=question, error=str(e))
-        return {
-            "answer": (
-                "Não consegui gerar uma consulta segura para essa pergunta. "
-                "Tente reformular de forma mais específica."
-            ),
-            "generated_query": None,
-            "error": str(e),
-        }
+    generated_query: str | None = None
+    answer_parts: list[str] = []
+    error: str | None = None
 
-    intermediate_steps = result.get("intermediate_steps", [])
-    generated_query = None
-    for step in intermediate_steps:
-        if isinstance(step, dict) and "query" in step:
-            generated_query = step["query"]
-            break
+    for event in ask_global_stream(question, company_id=company_id):
+        event_type = event["type"]
+        if event_type == "meta":
+            generated_query = event.get("generated_query", generated_query)
+        elif event_type == "token":
+            answer_parts.append(event.get("text", ""))
+        elif event_type == "error":
+            error = event.get("message")
+            generated_query = event.get("generated_query", generated_query)
 
-    if generated_query:
-        try:
-            _validate_query_is_read_only(generated_query)
-        except UnsafeCypherQueryError as e:
-            return {
-                "answer": "A consulta gerada foi bloqueada por motivos de segurança.",
-                "generated_query": generated_query,
-                "error": str(e),
-            }
+    if error:
+        return {"answer": error, "generated_query": generated_query, "error": error}
 
     logger.info("cypher_qa_answered", question=question, generated_query=generated_query)
-
     return {
-        "answer": result.get("result"),
+        "answer": "".join(answer_parts),
         "generated_query": generated_query,
         "error": None,
     }
 
 
-def ask_global_stream(question: str) -> Iterator[dict]:
+def ask_global_stream(question: str, company_id: str | None = None) -> Iterator[dict]:
     """Variante em streaming da via GLOBAL. `GraphCypherQAChain.invoke` roda
     geração de Cypher + execução + síntese da resposta como uma chamada só,
     sem hook pra transmitir a etapa final token a token — por isso aqui as
@@ -179,8 +187,9 @@ def ask_global_stream(question: str) -> Iterator[dict]:
         return
 
     try:
+        secured_question = _scoped_question(question, company_id) if company_id else question
         raw_cypher = chain.cypher_generation_chain.invoke(
-            {"question": question, "examples": None, "schema": chain.graph_schema}
+            {"question": secured_question, "examples": None, "schema": chain.graph_schema}
         )
         generated_query = extract_cypher(raw_cypher)
     except Exception as e:
@@ -193,6 +202,8 @@ def ask_global_stream(question: str) -> Iterator[dict]:
 
     try:
         _validate_query_is_read_only(generated_query)
+        if company_id:
+            _validate_query_is_company_scoped(generated_query, company_id)
     except UnsafeCypherQueryError as e:
         yield {
             "type": "error",

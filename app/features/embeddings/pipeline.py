@@ -15,12 +15,18 @@ from app.core.config import settings
 from app.core.infrastructure.database.neo4j import run_query, run_write_batch
 from app.core.logger import logger
 from app.features.embeddings.cypher import (
+    FETCH_CUSTOMER_SUMMARIES,
     FETCH_ORDER_SUMMARIES,
     FETCH_PRODUCT_SUMMARIES,
+    WRITE_CUSTOMER_EMBEDDINGS,
     WRITE_ORDER_EMBEDDINGS,
     WRITE_PRODUCT_EMBEDDINGS,
 )
-from app.features.embeddings.text_builder import build_order_text, build_product_text
+from app.features.embeddings.text_builder import (
+    build_customer_text,
+    build_order_text,
+    build_product_text,
+)
 
 _client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
@@ -88,6 +94,12 @@ def embed_products() -> int:
     )
 
 
+def embed_customers() -> int:
+    return _process_entity(
+        FETCH_CUSTOMER_SUMMARIES, build_customer_text, WRITE_CUSTOMER_EMBEDDINGS, "Customer"
+    )
+
+
 def create_vector_indexes() -> None:
     """Cria os vector indexes nativos do Neo4j sobre as propriedades de embedding."""
     run_query(
@@ -110,22 +122,43 @@ def create_vector_indexes() -> None:
         }}}}
         """
     )
+    run_query(
+        f"""
+        CREATE VECTOR INDEX customer_embedding_index IF NOT EXISTS
+        FOR (c:Customer) ON (c.text_embedding)
+        OPTIONS {{indexConfig: {{
+            `vector.dimensions`: {settings.OPENAI_EMBEDDING_DIMENSIONS},
+            `vector.similarity_function`: 'cosine'
+        }}}}
+        """
+    )
     logger.info("vector_indexes_created")
 
 
 def run_embedding_pipeline() -> dict:
-    """Orders e Products são embedados em paralelo — são queries/escritas
-    totalmente independentes (nós e propriedades diferentes), então rodar em
-    duas threads sobrepõe a espera de rede de uma com a da outra em vez de
-    pagar as duas em série."""
+    """Orders, Products e Customers são embedados em paralelo — são
+    queries/escritas totalmente independentes (nós e propriedades
+    diferentes), então rodar em threads separadas sobrepõe a espera de rede
+    de uma com a das outras em vez de pagar as três em série."""
     logger.info("embedding_pipeline_started")
 
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    with ThreadPoolExecutor(max_workers=3) as executor:
         orders_future = executor.submit(embed_orders)
         products_future = executor.submit(embed_products)
+        customers_future = executor.submit(embed_customers)
         order_count = orders_future.result()
         product_count = products_future.result()
+        customer_count = customers_future.result()
 
     create_vector_indexes()
-    logger.info("embedding_pipeline_complete", orders=order_count, products=product_count)
-    return {"orders_embedded": order_count, "products_embedded": product_count}
+    logger.info(
+        "embedding_pipeline_complete",
+        orders=order_count,
+        products=product_count,
+        customers=customer_count,
+    )
+    return {
+        "orders_embedded": order_count,
+        "products_embedded": product_count,
+        "customers_embedded": customer_count,
+    }

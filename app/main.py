@@ -22,6 +22,7 @@ from .features.health.router import router as health_router
 from .features.integration.router import router as integration_router
 from .features.order.router import router as order_router
 from .features.rag.router import router as rag_router
+from .features.user.router import router as user_router
 
 
 @asynccontextmanager
@@ -64,6 +65,7 @@ class App:
         self.__app.include_router(router=health_router, prefix=settings.API_V1_PREFIX)
         self.__app.include_router(router=company_router, prefix=settings.API_V1_PREFIX)
         self.__app.include_router(router=integration_router, prefix=settings.API_V1_PREFIX)
+        self.__app.include_router(router=user_router, prefix=settings.API_V1_PREFIX)
         self.__app.include_router(router=dashboard_router, prefix=settings.API_V1_PREFIX)
         self.__app.include_router(router=order_router, prefix=settings.API_V1_PREFIX)
         self.__app.include_router(router=graph_algorithms_router, prefix=settings.API_V1_PREFIX)

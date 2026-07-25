@@ -11,6 +11,7 @@ class AskRequest(BaseModel):
 class AskSource(BaseModel):
     order_code: int | None = None
     product_code: int | str | None = None
+    customer_name: str | None = None
     score: float | None = None
 
 

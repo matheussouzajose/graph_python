@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Loader2, Search, TrendingUp } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/shared/PageHeader'
+import { SectionCard } from '@/components/shared/SectionCard'
 import { DataTable } from '@/components/shared/DataTable'
 import { ProductCombobox } from '@/components/shared/ProductCombobox'
 import { RecommendationResultsTable } from '@/components/shared/RecommendationResultsTable'
@@ -91,11 +93,35 @@ export function ProductsPage() {
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm font-medium">Ranking de produtos</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <PageHeader
+        title="Produtos"
+        description="Compare desempenho comercial, importância no grafo e oportunidades de cross-sell."
+        icon={TrendingUp}
+      />
+
+      <SectionCard
+        title="Faturamento por produto"
+        description="Top produtos por receita estimada no grafo."
+        icon={TrendingUp}
+      >
+        <ResponsiveContainer width="100%" height={260}>
+          <BarChart data={(topRevenue.data ?? []).slice(0, 10)} margin={{ left: 8, right: 8 }}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey="product_name" hide />
+            <YAxis width={92} tickFormatter={(value) => formatCurrency(Number(value))} fontSize={12} />
+            <Tooltip
+              formatter={(value) => [formatCurrency(Number(value)), 'Faturamento']}
+              labelFormatter={(_, payload) => payload?.[0]?.payload?.product_name ?? 'Produto'}
+            />
+            <Bar dataKey="revenue" fill="var(--primary)" radius={[5, 5, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </SectionCard>
+
+      <SectionCard
+        title="Ranking de produtos"
+        description="Compare volume, faturamento, importância estrutural e associação entre produtos."
+      >
           <Tabs defaultValue="selling">
             <TabsList>
               <TabsTrigger value="selling">Mais vendidos</TabsTrigger>
@@ -111,6 +137,8 @@ export function ProductsPage() {
                 emptyTitle="Nenhum produto vendido ainda"
                 emptyDescription="Sincronize pedidos e projete-os no grafo para ver o ranking aqui."
                 getRowId={(row) => row.product_id}
+                searchable
+                searchPlaceholder="Buscar produto ou código..."
               />
             </TabsContent>
             <TabsContent value="revenue" className="mt-4">
@@ -120,6 +148,8 @@ export function ProductsPage() {
                 loading={topRevenue.isLoading}
                 emptyTitle="Nenhum faturamento calculado ainda"
                 getRowId={(row) => row.product_id}
+                searchable
+                searchPlaceholder="Buscar produto ou código..."
               />
             </TabsContent>
             <TabsContent value="pagerank" className="mt-4">
@@ -130,6 +160,8 @@ export function ProductsPage() {
                 emptyTitle="PageRank ainda não calculado"
                 emptyDescription='Rode "Rodar algoritmos" na Home para calcular o PageRank de produtos.'
                 getRowId={(row) => row.product_id}
+                searchable
+                searchPlaceholder="Buscar produto ou código..."
               />
             </TabsContent>
             <TabsContent value="bought-together" className="mt-4">
@@ -140,18 +172,19 @@ export function ProductsPage() {
                 emptyTitle="Nenhuma regra de associação calculada ainda"
                 emptyDescription='Rode "Rodar algoritmos" na Home para gerar as regras de produtos comprados juntos.'
                 getRowId={(row) => `${row.product_id}-${row.related_product_id}`}
+                searchable
+                searchPlaceholder="Buscar produto relacionado..."
               />
             </TabsContent>
           </Tabs>
-        </CardContent>
-      </Card>
+      </SectionCard>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm font-medium">Recomendações por produto</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
+      <SectionCard
+        title="Recomendações por produto"
+        description="Combine similaridade, produtos comprados juntos e PageRank para orientar cross-sell."
+      >
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/35 p-3">
             <ProductCombobox
               products={productOptions}
               value={selectedProduct}
@@ -180,8 +213,8 @@ export function ProductsPage() {
               Escolha um produto e clique em "Ver recomendações".
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </SectionCard>
     </div>
   )
 }

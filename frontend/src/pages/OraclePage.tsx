@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Compass, History, Loader2, Send } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Compass, History, MessageSquareText, Send, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { PageHeader } from '@/components/shared/PageHeader'
+import { SectionCard } from '@/components/shared/SectionCard'
 import { useAskOracleStream, type OracleResult } from '@/hooks/use-oracle-stream'
 import type { AskSource } from '@/types/api'
 
@@ -60,10 +61,6 @@ export function OraclePage() {
     })
   }
 
-  // Ao visualizar um item do histórico, a tela mostra aquele resultado
-  // congelado; caso contrário, mostra o estado ao vivo do streaming atual
-  // (ou o resultado que acabou de terminar, já que o hook mantém os campos
-  // preenchidos até a próxima pergunta).
   const displayed: (OracleResult & { question: string }) | null = viewingEntry
     ? viewingEntry
     : currentQuestion
@@ -79,63 +76,77 @@ export function OraclePage() {
   const showStreamingCursor = isLiveView && oracle.isStreaming
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-      <div className="space-y-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-sm font-medium">
-              <Compass className="size-4" /> Pergunte em linguagem natural
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Textarea
-              placeholder="Ex: Quais produtos mais vendidos no último mês?"
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleAsk(question)
-              }}
-              rows={3}
-            />
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap gap-1.5">
-                {SUGGESTIONS.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setQuestion(s)}
-                    className="rounded-full border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted"
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-              <Button
-                disabled={!question.trim() || oracle.isStreaming}
-                onClick={() => handleAsk(question)}
-              >
-                {oracle.isStreaming ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Send className="size-4" />
-                )}
-                Perguntar
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+    <div className="space-y-6">
+      <PageHeader
+        title="Oráculo"
+        description="Faça perguntas em linguagem natural e acompanhe a resposta com fontes e consulta gerada."
+        icon={Compass}
+      />
 
-        {displayed ? (
-          <Card>
-            <CardHeader className="flex-row items-center justify-between">
-              <CardTitle className="text-sm font-medium">{displayed.question}</CardTitle>
-              {displayed.route ? (
-                <Badge variant={displayed.route === 'GLOBAL' ? 'default' : 'secondary'}>
-                  {displayed.route}
-                </Badge>
-              ) : null}
-            </CardHeader>
-            <CardContent className="space-y-4">
+      <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+        <div className="space-y-4">
+          <SectionCard
+            title="Pergunte em linguagem natural"
+            description="O Oráculo decide entre busca local e consulta analítica no grafo."
+            icon={Compass}
+          >
+            <div className="space-y-3">
+              <Textarea
+                placeholder="Ex: Quais produtos mais vendidos no último mês?"
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleAsk(question)
+                }}
+                rows={3}
+              />
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap gap-1.5">
+                  {SUGGESTIONS.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setQuestion(s)}
+                      className="rounded-md border bg-card px-2.5 py-1 text-xs text-muted-foreground shadow-sm hover:bg-muted"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+                {oracle.isStreaming ? (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      oracle.reset()
+                      setCurrentQuestion(null)
+                    }}
+                  >
+                    <Square className="size-4" />
+                    Parar
+                  </Button>
+                ) : (
+                  <Button disabled={!question.trim()} onClick={() => handleAsk(question)}>
+                    <Send className="size-4" />
+                    Perguntar
+                  </Button>
+                )}
+              </div>
+            </div>
+          </SectionCard>
+
+          {displayed ? (
+            <SectionCard
+              title={displayed.question}
+              icon={MessageSquareText}
+              actions={
+                displayed.route ? (
+                  <Badge variant={displayed.route === 'GLOBAL' ? 'default' : 'secondary'}>
+                    {displayed.route}
+                  </Badge>
+                ) : null
+              }
+              contentClassName="space-y-4"
+            >
               {isLiveView && oracle.error ? (
                 <p className="text-sm text-destructive">{oracle.error}</p>
               ) : (
@@ -150,7 +161,7 @@ export function OraclePage() {
               {displayed.generatedQuery ? (
                 <div>
                   <p className="mb-1 text-xs font-medium text-muted-foreground">Cypher gerado</p>
-                  <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs">
+                  <pre className="overflow-x-auto rounded-lg border bg-muted/65 p-3 text-xs">
                     <code>{displayed.generatedQuery}</code>
                   </pre>
                 </div>
@@ -161,13 +172,18 @@ export function OraclePage() {
                   <p className="mb-1 text-xs font-medium text-muted-foreground">Fontes</p>
                   <ul className="space-y-1 text-xs">
                     {displayed.sources.map((source: AskSource, i: number) => (
-                      <li key={i} className="flex justify-between rounded border px-2 py-1">
+                      <li
+                        key={i}
+                        className="flex justify-between rounded-md border bg-card px-2 py-1"
+                      >
                         <span>
                           {source.order_code
                             ? `Pedido #${source.order_code}`
                             : source.product_code
                               ? `Produto (código ${source.product_code})`
-                              : '—'}
+                              : source.customer_name
+                                ? `Cliente: ${source.customer_name}`
+                                : '—'}
                         </span>
                         <span className="text-muted-foreground">
                           score {source.score?.toFixed(3) ?? '—'}
@@ -177,23 +193,16 @@ export function OraclePage() {
                   </ul>
                 </div>
               ) : null}
-            </CardContent>
-          </Card>
-        ) : (
-          <EmptyState
-            title="Nenhuma pergunta feita ainda"
-            description="Escreva uma pergunta acima ou escolha uma sugestão para começar."
-          />
-        )}
-      </div>
+            </SectionCard>
+          ) : (
+            <EmptyState
+              title="Nenhuma pergunta feita ainda"
+              description="Escreva uma pergunta acima ou escolha uma sugestão para começar."
+            />
+          )}
+        </div>
 
-      <Card className="h-fit">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-sm font-medium">
-            <History className="size-4" /> Histórico
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-1">
+        <SectionCard title="Histórico" icon={History} className="h-fit" contentClassName="space-y-1">
           {history.length === 0 ? (
             <p className="text-sm text-muted-foreground">Suas últimas perguntas aparecem aqui.</p>
           ) : (
@@ -205,14 +214,14 @@ export function OraclePage() {
                   setViewingEntry(entry)
                   setCurrentQuestion(null)
                 }}
-                className="block w-full truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
+                className="block w-full truncate rounded-md border border-transparent px-2 py-1.5 text-left text-sm hover:border-border hover:bg-muted"
               >
                 {entry.question}
               </button>
             ))
           )}
-        </CardContent>
-      </Card>
+        </SectionCard>
+      </div>
     </div>
   )
 }

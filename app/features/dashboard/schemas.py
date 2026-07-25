@@ -71,6 +71,8 @@ class CustomerSummary(BaseModel):
     rfm_frequency: int | None
     rfm_monetary: float | None
     last_order_at: datetime | None
+    city_name: str | None
+    state_initials: str | None
 
 
 class CustomerPurchasedProduct(BaseModel):

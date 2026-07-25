@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import {
   Database,
   Loader2,
@@ -12,7 +12,6 @@ import {
   Wallet,
   Workflow,
 } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -24,6 +23,8 @@ import {
 import { StatCard } from '@/components/shared/StatCard'
 import { RelativeTime } from '@/components/shared/RelativeTime'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { PageHeader } from '@/components/shared/PageHeader'
+import { SectionCard } from '@/components/shared/SectionCard'
 import { useOverview, useSyncStatus } from '@/hooks/use-dashboard'
 import { useIntegrations } from '@/hooks/use-catalog'
 import {
@@ -43,6 +44,15 @@ const STATUS_LABELS: Record<string, string> = {
   delivered: 'Entregue',
 }
 
+const STATUS_COLORS: Record<string, string> = {
+  paid: '#059669',
+  delivered: '#2563eb',
+  shipped: '#0891b2',
+  pending: '#d97706',
+  canceled: '#dc2626',
+  cancelled: '#dc2626',
+}
+
 export function HomePage() {
   const overview = useOverview()
   const syncStatus = useSyncStatus()
@@ -55,17 +65,29 @@ export function HomePage() {
   const embeddingsAction = useRunEmbeddingsAction()
 
   const statusData = (overview.data?.orders_by_status ?? []).map((item) => ({
+    key: item.status,
     status: STATUS_LABELS[item.status] ?? item.status,
     count: item.count,
+    color: STATUS_COLORS[item.status] ?? '#64748b',
   }))
+  const hasIntegrations = (integrations.data ?? []).length > 0
+  const hasOrders = (overview.data?.total_orders ?? 0) > 0
+  const hasAlgorithms = Boolean(overview.data?.last_algorithms_run_at)
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium">Ações</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-center gap-2">
+      <PageHeader
+        title="Operação comercial"
+        description="Acompanhe a saúde do pipeline e os principais indicadores da empresa."
+        icon={Workflow}
+      />
+
+      <SectionCard
+        title="Pipeline de dados"
+        description="Sincronize pedidos, projete o grafo e atualize os sinais comerciais."
+        icon={Database}
+      >
+        <div className="flex flex-wrap items-center gap-2.5">
           <Select value={selectedIntegration} onValueChange={setSelectedIntegration}>
             <SelectTrigger className="w-56">
               <SelectValue placeholder="Selecione uma integração" />
@@ -126,8 +148,26 @@ export function HomePage() {
             )}
             Rodar embeddings
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </SectionCard>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <PipelineTile
+          label="Integrações"
+          ready={hasIntegrations}
+          value={hasIntegrations ? `${integrations.data?.length ?? 0} cadastrada(s)` : 'Nenhuma'}
+        />
+        <PipelineTile
+          label="Pedidos sincronizados"
+          ready={hasOrders}
+          value={formatNumber(overview.data?.total_orders)}
+        />
+        <PipelineTile
+          label="Sinais do grafo"
+          ready={hasAlgorithms}
+          value={hasAlgorithms ? 'Atualizados' : 'Pendente'}
+        />
+      </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <StatCard
@@ -135,39 +175,40 @@ export function HomePage() {
           value={formatCurrency(overview.data?.total_revenue)}
           icon={Wallet}
           loading={overview.isLoading}
+          tone="teal"
         />
         <StatCard
           label="Total de pedidos"
           value={formatNumber(overview.data?.total_orders)}
           icon={ReceiptText}
           loading={overview.isLoading}
+          tone="blue"
         />
         <StatCard
           label="Ticket médio"
           value={formatCurrency(overview.data?.average_ticket)}
           icon={Wallet}
           loading={overview.isLoading}
+          tone="amber"
         />
         <StatCard
           label="Clientes compradores"
           value={formatNumber(overview.data?.unique_customers)}
           icon={Users}
           loading={overview.isLoading}
+          tone="violet"
         />
         <StatCard
           label="Produtos vendidos"
           value={formatNumber(overview.data?.products_sold)}
           icon={Package}
           loading={overview.isLoading}
+          tone="rose"
         />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-sm font-medium">Pedidos por status</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <SectionCard title="Pedidos por status" icon={ReceiptText} className="lg:col-span-2">
             {overview.isLoading ? (
               <div className="h-64 animate-pulse rounded-md bg-muted" />
             ) : statusData.length === 0 ? (
@@ -185,42 +226,51 @@ export function HomePage() {
                     formatter={(value) => [formatNumber(Number(value)), 'Pedidos']}
                     cursor={{ fill: 'var(--muted)' }}
                   />
-                  <Bar dataKey="count" fill="var(--primary)" radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="count" radius={[0, 4, 4, 0]}>
+                    {statusData.map((entry) => (
+                      <Cell key={entry.key} fill={entry.color} />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             )}
-          </CardContent>
-        </Card>
+        </SectionCard>
 
         <div className="space-y-4">
-          <Card>
-            <CardHeader className="flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Última sincronização</CardTitle>
-              <Database className="size-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
+          <SectionCard title="Última sincronização" icon={Database}>
               <p className="text-lg font-semibold">
                 <RelativeTime value={overview.data?.last_order_sync_at} />
               </p>
               <p className="mt-1 text-xs text-muted-foreground">Pedidos do ERP → Postgres</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Última execução dos algoritmos</CardTitle>
-              <Play className="size-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
+          </SectionCard>
+          <SectionCard title="Última execução dos algoritmos" icon={Play}>
               <p className="text-lg font-semibold">
                 <RelativeTime value={overview.data?.last_algorithms_run_at} />
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 {(syncStatus.data?.algorithm_runs ?? []).length} job(s) já registrado(s)
               </p>
-            </CardContent>
-          </Card>
+          </SectionCard>
         </div>
       </div>
+    </div>
+  )
+}
+
+function PipelineTile({ label, value, ready }: { label: string; value: string; ready: boolean }) {
+  return (
+    <div className="rounded-lg border bg-card p-3 shadow-sm">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-medium text-muted-foreground">{label}</p>
+        <span
+          className={
+            ready
+              ? 'size-2.5 rounded-full bg-emerald-500'
+              : 'size-2.5 rounded-full bg-amber-500'
+          }
+        />
+      </div>
+      <p className="mt-1 text-sm font-semibold">{value}</p>
     </div>
   )
 }

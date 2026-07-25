@@ -49,6 +49,11 @@ class IntegrationService:
     async def get(self, integration_id: UUID) -> IntegrationORM | None:
         return await self._repository.get(integration_id)
 
+    async def get_for_company(
+        self, integration_id: UUID, company_id: UUID
+    ) -> IntegrationORM | None:
+        return await self._repository.get_for_company(integration_id, company_id)
+
     async def list(
         self, company_id: UUID | None = None, limit: int = 100, offset: int = 0
     ) -> Sequence[IntegrationORM]:

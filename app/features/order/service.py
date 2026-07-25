@@ -16,9 +16,26 @@ class OrderService:
     async def get(self, order_id: UUID) -> OrderORM | None:
         return await self._repository.get(order_id)
 
+    async def get_for_company(self, order_id: UUID, company_id: UUID) -> OrderORM | None:
+        return await self._repository.get_for_company(order_id, company_id)
+
     async def list(
         self, integration_id: UUID | None = None, limit: int = 100, offset: int = 0
     ) -> Sequence[OrderORM]:
         return await self._repository.list(
             integration_id=integration_id, limit=limit, offset=offset
+        )
+
+    async def list_for_company(
+        self,
+        company_id: UUID,
+        integration_id: UUID | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> Sequence[OrderORM]:
+        return await self._repository.list_for_company(
+            company_id=company_id,
+            integration_id=integration_id,
+            limit=limit,
+            offset=offset,
         )

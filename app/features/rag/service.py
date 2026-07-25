@@ -22,10 +22,12 @@ _STREAM_DONE = object()
 
 
 class RagService:
-    async def ask(self, question: str, top_k: int = 5) -> dict:
-        return await asyncio.to_thread(ask_rag, question, top_k)
+    async def ask(self, question: str, top_k: int = 5, company_id: str | None = None) -> dict:
+        return await asyncio.to_thread(ask_rag, question, top_k, company_id)
 
-    async def ask_stream(self, question: str, top_k: int = 5) -> AsyncIterator[dict]:
+    async def ask_stream(
+        self, question: str, top_k: int = 5, company_id: str | None = None
+    ) -> AsyncIterator[dict]:
         """`ask_rag_stream` é um generator síncrono (cada `yield` pode ter
         bloqueado em I/O de rede — Neo4j ou OpenAI) — `asyncio.to_thread` só
         serve pra uma chamada que retorna um valor só, não pra iterar um
@@ -39,7 +41,7 @@ class RagService:
 
         def _run() -> None:
             try:
-                for event in ask_rag_stream(question, top_k):
+                for event in ask_rag_stream(question, top_k, company_id):
                     loop.call_soon_threadsafe(queue.put_nowait, event)
             except Exception as e:
                 loop.call_soon_threadsafe(queue.put_nowait, {"type": "error", "message": str(e)})

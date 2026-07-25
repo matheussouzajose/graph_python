@@ -70,6 +70,8 @@ export interface CustomerSummary {
   rfm_frequency: number | null
   rfm_monetary: number | null
   last_order_at: string | null
+  city_name: string | null
+  state_initials: string | null
 }
 
 export interface CustomerPurchasedProduct {
@@ -110,6 +112,31 @@ export interface Company {
   updated_at: string
 }
 
+export interface User {
+  id: string
+  company_id: string
+  email: string
+  name: string
+  role: string
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface AuthUser {
+  id: string
+  company_id: string
+  email: string
+  name: string
+  role: string
+}
+
+export interface LoginResponse {
+  access_token: string
+  token_type: 'bearer' | string
+  user: User
+}
+
 export interface Integration {
   id: string
   company_id: string
@@ -121,6 +148,14 @@ export interface Integration {
   is_active: boolean
   created_at: string
   updated_at: string
+}
+
+export interface IntegrationUpdateInput {
+  name?: string
+  base_url?: string
+  configs?: Record<string, unknown>
+  params?: Record<string, unknown>
+  is_active?: boolean
 }
 
 export interface TriggerResponse {
@@ -153,6 +188,7 @@ export interface RecommendationResult {
 export interface AskSource {
   order_code: string | null
   product_code: string | null
+  customer_name: string | null
   score: number | null
 }
 

@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Loader2, Search } from 'lucide-react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Loader2, Search, Sparkles } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
+import { PageHeader } from '@/components/shared/PageHeader'
+import { SectionCard } from '@/components/shared/SectionCard'
 import { ProductCombobox } from '@/components/shared/ProductCombobox'
 import { CustomerCombobox } from '@/components/shared/CustomerCombobox'
 import { RecommendationResultsTable } from '@/components/shared/RecommendationResultsTable'
@@ -12,11 +13,14 @@ import { useRecommendByCustomer, useRecommendByProduct } from '@/hooks/use-actio
 
 export function RecommendationsPage() {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-sm font-medium">Central de recomendações</CardTitle>
-      </CardHeader>
-      <CardContent>
+    <div className="space-y-6">
+      <PageHeader
+        title="Recomendações"
+        description="Gere listas acionáveis a partir do contexto de produto ou do histórico de cliente."
+        icon={Sparkles}
+      />
+
+      <SectionCard title="Central de recomendações" icon={Sparkles}>
         <Tabs defaultValue="product">
           <TabsList>
             <TabsTrigger value="product">Por produto</TabsTrigger>
@@ -29,8 +33,8 @@ export function RecommendationsPage() {
             <ByCustomerPanel />
           </TabsContent>
         </Tabs>
-      </CardContent>
-    </Card>
+      </SectionCard>
+    </div>
   )
 }
 
@@ -41,7 +45,7 @@ function ByProductPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/35 p-3">
         <ProductCombobox
           products={products.data ?? []}
           value={selectedProduct}
@@ -65,10 +69,12 @@ function ByProductPanel() {
       {recommend.data ? (
         <RecommendationResultsTable results={recommend.data} loading={recommend.isPending} />
       ) : (
-        <p className="text-sm text-muted-foreground">
-          Escolha um produto e clique em "Recomendar" para ver produtos relacionados por
-          similaridade e coocorrência.
-        </p>
+        <div className="rounded-lg border border-dashed bg-card p-4">
+          <p className="text-sm font-medium">Nenhuma recomendação gerada</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Escolha um produto para ver itens relacionados por similaridade e coocorrência.
+          </p>
+        </div>
       )}
     </div>
   )
@@ -83,7 +89,7 @@ function ByCustomerPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/35 p-3">
         <CustomerCombobox
           customers={customers.data ?? []}
           value={selectedCustomer}
@@ -108,10 +114,12 @@ function ByCustomerPanel() {
       {recommend.data ? (
         <RecommendationResultsTable results={recommend.data} loading={recommend.isPending} />
       ) : (
-        <p className="text-sm text-muted-foreground">
-          Escolha um cliente e clique em "Recomendar" para ver produtos baseados no histórico de
-          compras e no segmento RFM.
-        </p>
+        <div className="rounded-lg border border-dashed bg-card p-4">
+          <p className="text-sm font-medium">Nenhuma recomendação gerada</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Escolha um cliente para ver produtos baseados no histórico de compras e no segmento RFM.
+          </p>
+        </div>
       )}
     </div>
   )
