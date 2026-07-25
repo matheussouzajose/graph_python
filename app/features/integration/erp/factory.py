@@ -15,6 +15,7 @@ from app.features.integration.erp.base import (
     UnsupportedProviderError,
 )
 from app.features.integration.erp.vesti import VestiClient
+from app.features.integration.erp.vesti import describe_cursor as _describe_vesti_cursor
 from app.features.integration.orm import IntegrationORM
 from app.features.integration.schemas import IntegrationProvider
 
@@ -24,6 +25,21 @@ def get_erp_client(integration: IntegrationORM, company: CompanyORM) -> ERPClien
     if provider == IntegrationProvider.VESTI:
         return _build_vesti_client(integration, company)
     raise UnsupportedProviderError(integration.provider)
+
+
+def describe_sync_progress(provider: str, cursor: str | None) -> datetime | None:
+    """Provider-specific, best-effort decode of an opaque sync cursor into a
+    "synced up to" timestamp for status displays (dashboard sync-status
+    view). Mirrors `get_erp_client`'s role as the only place mapping
+    provider -> concrete client: onboarding a new ERP that wants this same
+    UI hint means adding one branch here, same as `get_erp_client`. Returns
+    None for no cursor or an unrecognized provider — this must never raise,
+    it only feeds an optional UI hint."""
+    if cursor is None:
+        return None
+    if provider == IntegrationProvider.VESTI.value:
+        return _describe_vesti_cursor(cursor)
+    return None
 
 
 def _build_vesti_client(integration: IntegrationORM, company: CompanyORM) -> VestiClient:

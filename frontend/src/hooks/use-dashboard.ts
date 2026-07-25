@@ -10,6 +10,7 @@ import {
   getTopRevenueProducts,
   getTopSellingProducts,
 } from '@/lib/api'
+import type { SyncStatus } from '@/types/api'
 
 export const dashboardKeys = {
   overview: ['dashboard', 'overview'] as const,
@@ -30,7 +31,18 @@ export function useOverview() {
 }
 
 export function useSyncStatus() {
-  return useQuery({ queryKey: dashboardKeys.syncStatus, queryFn: getSyncStatus })
+  return useQuery({
+    queryKey: dashboardKeys.syncStatus,
+    queryFn: getSyncStatus,
+    // Enquanto alguma integração está "running", há um sync em andamento em
+    // outro processo (worker/consumer) — poll a cada 5s pra refletir sem
+    // precisar de refresh manual. Some running -> volta a não pollar.
+    refetchInterval: (query) => {
+      const data = query.state.data as SyncStatus | undefined
+      const hasRunning = data?.integrations.some((integration) => integration.status === 'running')
+      return hasRunning ? 5000 : false
+    },
+  })
 }
 
 export function useTopSellingProducts(limit = 10) {

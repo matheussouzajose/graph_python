@@ -64,6 +64,19 @@ class _Cursor:
         )
 
 
+def describe_cursor(cursor: str) -> datetime | None:
+    """Best-effort decode of an opaque sync cursor into a "synced up to"
+    timestamp, for status displays only (e.g. the integrations dashboard).
+    Returns None for a malformed or pre-`window_days` cursor rather than
+    raising — a bad cursor must not break the status view, only the decoded
+    "synced until" hint disappears."""
+    try:
+        decoded = _Cursor.decode(cursor)
+    except (json.JSONDecodeError, KeyError, ValueError):
+        return None
+    return decoded.window_end if decoded else None
+
+
 class VestiClient:
     def __init__(
         self,

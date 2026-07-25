@@ -88,8 +88,11 @@ export interface IntegrationSyncStatus {
   integration_id: string
   integration_name: string
   provider: string
+  is_active: boolean
+  // 'never_synced' | 'running' | 'idle'
   status: string
   last_synced_at: string | null
+  synced_until: string | null
 }
 
 export interface AlgorithmRunStatus {

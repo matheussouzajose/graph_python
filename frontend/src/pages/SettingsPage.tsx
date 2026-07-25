@@ -3,6 +3,7 @@ import type { FormEvent, ReactNode } from 'react'
 import {
   Building2,
   CheckCircle2,
+  Clock,
   Database,
   Loader2,
   Pencil,
@@ -47,13 +48,15 @@ import {
   useIntegrations,
   useUpdateIntegration,
 } from '@/hooks/use-catalog'
+import { useSyncStatus } from '@/hooks/use-dashboard'
 import {
   useGraphSyncAction,
   useRunAlgorithmsAction,
   useRunEmbeddingsAction,
   useSyncIntegrationAction,
 } from '@/hooks/use-actions'
-import type { Integration } from '@/types/api'
+import { formatDateTime } from '@/lib/format'
+import type { Integration, IntegrationSyncStatus } from '@/types/api'
 
 type KeyValueType = 'string' | 'number' | 'boolean' | 'json' | 'null'
 
@@ -218,6 +221,21 @@ function InfoTile({
   )
 }
 
+const SYNC_STATUS_META: Record<string, { label: string; className: string }> = {
+  running: {
+    label: 'Sincronizando',
+    className: 'border-amber-200 bg-amber-50 text-amber-700',
+  },
+  idle: {
+    label: 'Em dia',
+    className: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  },
+  never_synced: {
+    label: 'Nunca sincronizado',
+    className: 'border-slate-200 bg-slate-100 text-slate-600',
+  },
+}
+
 function IntegrationsSettings({
   integrations,
   loading,
@@ -232,6 +250,11 @@ function IntegrationsSettings({
   const graphSyncAction = useGraphSyncAction()
   const algorithmsAction = useRunAlgorithmsAction()
   const embeddingsAction = useRunEmbeddingsAction()
+  const syncStatus = useSyncStatus()
+  const syncStatusByIntegrationId = useMemo(() => {
+    const entries = syncStatus.data?.integrations ?? []
+    return new Map<string, IntegrationSyncStatus>(entries.map((entry) => [entry.integration_id, entry]))
+  }, [syncStatus.data])
 
   return (
     <>
@@ -292,7 +315,11 @@ function IntegrationsSettings({
             <EmptyState title="Nenhuma integração cadastrada" />
           ) : (
             <div className="grid gap-3">
-              {integrations.map((integration) => (
+              {integrations.map((integration) => {
+                const status = syncStatusByIntegrationId.get(integration.id)
+                const statusMeta =
+                  SYNC_STATUS_META[status?.status ?? 'never_synced'] ?? SYNC_STATUS_META.never_synced
+                return (
                 <div
                   key={integration.id}
                   className="grid gap-3 rounded-lg border bg-card p-4 shadow-sm lg:grid-cols-[1fr_auto]"
@@ -311,6 +338,14 @@ function IntegrationsSettings({
                       >
                         {integration.is_active ? 'Ativa' : 'Inativa'}
                       </Badge>
+                      <Badge variant="outline" className={statusMeta.className}>
+                        {status?.status === 'running' ? (
+                          <Loader2 className="size-3 animate-spin" />
+                        ) : (
+                          <Clock className="size-3" />
+                        )}
+                        {statusMeta.label}
+                      </Badge>
                     </div>
                     <p className="truncate font-mono text-xs text-muted-foreground">
                       {integration.base_url}
@@ -319,6 +354,13 @@ function IntegrationsSettings({
                       <span>ID {integration.id}</span>
                       <span>
                         Atualizada <RelativeTime value={integration.updated_at} />
+                      </span>
+                      <span>
+                        Última sincronização <RelativeTime value={status?.last_synced_at} />
+                      </span>
+                      <span>
+                        Pedidos sincronizados até{' '}
+                        {status?.synced_until ? formatDateTime(status.synced_until) : '—'}
                       </span>
                     </div>
                   </div>
@@ -351,7 +393,8 @@ function IntegrationsSettings({
                     </Button>
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
           )}
       </SectionCard>

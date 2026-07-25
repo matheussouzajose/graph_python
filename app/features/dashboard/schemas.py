@@ -89,8 +89,16 @@ class IntegrationSyncStatus(BaseModel):
     integration_id: str
     integration_name: str
     provider: str
+    is_active: bool
+    # "never_synced" | "running" | "idle" — see IntegrationSyncStateORM.status
+    # for "running"/"idle"; "never_synced" means no checkpoint row exists yet.
     status: str
     last_synced_at: datetime | None
+    # Decoded from the sync cursor (provider-specific, best-effort — see
+    # `erp/factory.py::describe_sync_progress`): how far into the order
+    # history this integration has synced. None if never synced or the
+    # provider has no decoder for its cursor format.
+    synced_until: datetime | None
 
 
 class AlgorithmRunStatus(BaseModel):

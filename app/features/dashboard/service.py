@@ -35,8 +35,9 @@ from app.features.dashboard.schemas import (
     TopRevenueProduct,
     TopSellingProduct,
 )
+from app.features.integration.erp.factory import describe_sync_progress
 from app.features.integration.repository import IntegrationRepository
-from app.features.integration.sync_state import IntegrationSyncStateRepository
+from app.features.integration.sync_state import RESOURCE_ORDERS, IntegrationSyncStateRepository
 
 
 def _native_dt(value: Any) -> datetime | None:
@@ -268,20 +269,31 @@ class DashboardService:
         algorithm_run_rows = await asyncio.to_thread(
             run_query, cypher.ALGORITHM_RUNS, {"company_id": str(external_company_id)}
         )
-        integrations_by_id = {integration.id: integration for integration in integrations}
+        states_by_integration_id = {
+            state.integration_id: state
+            for state in sync_states
+            if state.resource == RESOURCE_ORDERS
+        }
 
+        # Iterate integrations, not sync_states, so an integration that has
+        # never run a sync (no checkpoint row yet) still shows up — as
+        # "never_synced" — instead of silently missing from the view.
         integration_statuses = []
-        for state in sync_states:
-            integration = integrations_by_id.get(state.integration_id)
-            if integration is None:
-                continue
+        for integration in integrations:
+            state = states_by_integration_id.get(integration.id)
             integration_statuses.append(
                 IntegrationSyncStatus(
-                    integration_id=str(state.integration_id),
+                    integration_id=str(integration.id),
                     integration_name=integration.name,
                     provider=integration.provider,
-                    status=state.status,
-                    last_synced_at=state.last_synced_at,
+                    is_active=integration.is_active,
+                    status=state.status if state else "never_synced",
+                    last_synced_at=state.last_synced_at if state else None,
+                    synced_until=(
+                        describe_sync_progress(integration.provider, state.cursor)
+                        if state
+                        else None
+                    ),
                 )
             )
 
