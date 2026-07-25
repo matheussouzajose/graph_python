@@ -38,13 +38,10 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PATH="/app/.venv/bin:$PATH"
 
-# curl/ca-certificates -> HEALTHCHECK + download do deno
-# ffmpeg   -> yt-dlp merges, cutting, subtitle burning
-# libgl1 / libglib2.0-0 -> opencv/mediapipe runtime
-# unzip    -> extrair o binário do deno
+# curl/ca-certificates -> HEALTHCHECK
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        curl ca-certificates ffmpeg libgl1 libglib2.0-0 unzip \
+        curl ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 1001 appgroup \
     && useradd --system --uid 1001 --gid appgroup --no-create-home appuser \

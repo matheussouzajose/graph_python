@@ -43,4 +43,3 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD wget -q --spider http://localhost:4173 || exit 1
 
 CMD ["serve", "-s", "dist", "-l", "4173"]
-pq vou fazer 
