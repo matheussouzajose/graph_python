@@ -127,7 +127,7 @@ export function DataTable<TData>({
 
       <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm shadow-slate-950/[0.035]">
         <Table>
-          <TableHeader>
+          <TableHeader className="max-sm:hidden">
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id} className="border-border/70 bg-muted/45 hover:bg-muted/45">
                 {headerGroup.headers.map((header) => {
@@ -162,14 +162,14 @@ export function DataTable<TData>({
               </TableRow>
             ))}
           </TableHeader>
-          <TableBody>
+          <TableBody className="max-sm:block max-sm:space-y-3 max-sm:bg-muted/20 max-sm:p-2">
             {table.getRowModel().rows.length > 0 ? (
               table.getRowModel().rows.map((row) => (
                 <TableRow
                   key={row.id}
                   onClick={onRowClick ? () => onRowClick(row.original) : undefined}
                   className={cn(
-                    'border-border/55 hover:bg-muted/35',
+                    'group border-border/55 transition hover:bg-muted/35 max-sm:block max-sm:rounded-2xl max-sm:border max-sm:bg-card max-sm:shadow-sm',
                     onRowClick && 'cursor-pointer',
                   )}
                 >
@@ -177,11 +177,18 @@ export function DataTable<TData>({
                     <TableCell
                       key={cell.id}
                       className={cn(
-                        'text-[13px]',
+                        'text-[13px] max-sm:flex max-sm:items-start max-sm:justify-between max-sm:gap-4 max-sm:border-b max-sm:border-border/50 max-sm:last:border-0',
                         density === 'compact' ? 'px-3 py-2' : 'px-3 py-3',
                       )}
                     >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      <span className="hidden text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground max-sm:block">
+                        {typeof cell.column.columnDef.header === 'string'
+                          ? cell.column.columnDef.header
+                          : ''}
+                      </span>
+                      <span className="min-w-0 max-sm:text-right">
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </span>
                     </TableCell>
                   ))}
                 </TableRow>

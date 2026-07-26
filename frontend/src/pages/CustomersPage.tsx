@@ -1,7 +1,9 @@
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
+import { useNavigate } from 'react-router-dom'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { HeartPulse, Loader2, Package, Search, Sparkles, Users } from 'lucide-react'
+import { Bot, HeartPulse, Loader2, MapPin, Package, Search, Sparkles, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -247,12 +249,22 @@ function CustomerDetailSheet({
   customerId: string | null
   onOpenChange: (open: boolean) => void
 }) {
+  const navigate = useNavigate()
   const customer = useCustomer(customerId ?? undefined)
   const recommend = useRecommendByCustomer()
 
+  function askAboutCustomer() {
+    const name = customer.data?.name ?? customer.data?.document ?? 'este cliente'
+    navigate('/oraculo', {
+      state: {
+        question: `Analise o cliente ${name}: segmento RFM, risco, histórico e próximas ações comerciais.`,
+      },
+    })
+  }
+
   return (
     <Sheet open={Boolean(customerId)} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-lg">
+      <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-xl">
         <SheetHeader>
           <SheetTitle>{customer.data?.name ?? 'Detalhe do cliente'}</SheetTitle>
           <SheetDescription>
@@ -265,46 +277,52 @@ function CustomerDetailSheet({
             <div className="h-40 animate-pulse rounded-md bg-muted" />
           ) : customer.data ? (
             <>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-lg border bg-card p-3 shadow-sm">
-                  <p className="text-xs text-muted-foreground">Segmento</p>
-                  <SegmentBadge segment={customer.data.rfm_segment} />
-                </div>
-                <div className="rounded-lg border bg-card p-3 shadow-sm">
-                  <p className="text-xs text-muted-foreground">Score RFM</p>
-                  <p className="text-sm font-medium">{customer.data.rfm_score ?? '—'}</p>
-                </div>
-                <div className="rounded-lg border bg-card p-3 shadow-sm">
-                  <p className="text-xs text-muted-foreground">Valor total</p>
-                  <p className="text-sm font-medium">{formatCurrency(customer.data.rfm_monetary)}</p>
-                </div>
-                <div className="rounded-lg border bg-card p-3 shadow-sm">
-                  <p className="text-xs text-muted-foreground">Última compra</p>
-                  <p className="text-sm font-medium">
-                    <RelativeTime value={customer.data.last_order_at} />
-                  </p>
-                </div>
-                <div className="rounded-lg border bg-card p-3 shadow-sm">
-                  <p className="text-xs text-muted-foreground">Localização</p>
-                  <p className="text-sm font-medium">
-                    {[customer.data.city_name, customer.data.state_initials]
-                      .filter(Boolean)
-                      .join('/') || '—'}
-                  </p>
+              <div className="dark-panel relative overflow-hidden rounded-3xl p-4">
+                <div className="surface-glow absolute right-0 top-0 h-28 w-28 rounded-full bg-violet-400/20 blur-2xl" />
+                <div className="relative grid grid-cols-2 gap-3">
+                  <CustomerMetric label="Segmento" value={<SegmentBadge segment={customer.data.rfm_segment} />} />
+                  <CustomerMetric label="Score RFM" value={customer.data.rfm_score ?? '—'} />
+                  <CustomerMetric label="Valor total" value={formatCurrency(customer.data.rfm_monetary)} />
+                  <CustomerMetric
+                    label="Última compra"
+                    value={<RelativeTime value={customer.data.last_order_at} />}
+                  />
                 </div>
               </div>
 
-              <div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <CustomerInfoTile
+                  icon={MapPin}
+                  label="Localização"
+                  value={
+                    [customer.data.city_name, customer.data.state_initials]
+                      .filter(Boolean)
+                      .join('/') || '—'
+                  }
+                />
+                <CustomerInfoTile
+                  icon={Users}
+                  label="Contato"
+                  value={customer.data.email ?? customer.data.document ?? '—'}
+                />
+              </div>
+
+              <Button className="w-full rounded-2xl" onClick={askAboutCustomer}>
+                <Bot className="size-4" />
+                Perguntar ao Oráculo sobre este cliente
+              </Button>
+
+              <div className="rounded-2xl border bg-card p-4 shadow-sm">
                 <h3 className="mb-2 flex items-center gap-1.5 text-sm font-medium">
                   <Package className="size-4" /> Produtos comprados
                 </h3>
                 {customer.data.products_purchased.length === 0 ? (
                   <p className="text-sm text-muted-foreground">Nenhum produto encontrado.</p>
                 ) : (
-                  <ul className="space-y-1 text-sm">
+                  <ul className="space-y-2 text-sm">
                     {customer.data.products_purchased.map((product) => (
-                      <li key={product.product_id} className="flex justify-between border-b py-1.5">
-                        <span>{product.name}</span>
+                      <li key={product.product_id} className="flex justify-between gap-3 rounded-xl border bg-muted/25 px-3 py-2">
+                        <span className="min-w-0 truncate">{product.name}</span>
                         <span className="text-muted-foreground">{product.code}</span>
                       </li>
                     ))}
@@ -312,7 +330,7 @@ function CustomerDetailSheet({
                 )}
               </div>
 
-              <div>
+              <div className="rounded-2xl border bg-card p-4 shadow-sm">
                 <div className="mb-2 flex items-center justify-between">
                   <h3 className="text-sm font-medium">Recomendações para este cliente</h3>
                   <Button
@@ -345,5 +363,40 @@ function CustomerDetailSheet({
         </div>
       </SheetContent>
     </Sheet>
+  )
+}
+
+function CustomerMetric({
+  label,
+  value,
+}: {
+  label: string
+  value: ReactNode
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.075] p-3">
+      <p className="text-xs text-white/45">{label}</p>
+      <div className="mt-1 truncate text-sm font-semibold">{value}</div>
+    </div>
+  )
+}
+
+function CustomerInfoTile({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Users
+  label: string
+  value: string
+}) {
+  return (
+    <div className="rounded-2xl border bg-card p-4 shadow-sm">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Icon className="size-4 text-primary" />
+        {label}
+      </div>
+      <p className="mt-2 truncate text-sm font-semibold">{value}</p>
+    </div>
   )
 }

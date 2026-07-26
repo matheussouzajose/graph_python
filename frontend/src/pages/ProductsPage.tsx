@@ -1,9 +1,17 @@
 import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { GitBranch, Loader2, Search, Sparkles, TrendingUp } from 'lucide-react'
+import { Bot, GitBranch, Loader2, Search, Sparkles, TrendingUp } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import { SectionCard } from '@/components/shared/SectionCard'
 import { DataTable } from '@/components/shared/DataTable'
 import { ProductCombobox } from '@/components/shared/ProductCombobox'
@@ -74,12 +82,14 @@ const boughtTogetherColumns: ColumnDef<BoughtTogetherPair, any>[] = [
 ]
 
 export function ProductsPage() {
+  const navigate = useNavigate()
   const topSelling = useTopSellingProducts(20)
   const topRevenue = useTopRevenueProducts(20)
   const topPagerank = useTopPageRankProducts(20)
   const boughtTogether = useBoughtTogether(undefined, 20)
 
   const [selectedProduct, setSelectedProduct] = useState<string | null>(null)
+  const [detailProductId, setDetailProductId] = useState<string | null>(null)
   const recommend = useRecommendByProduct()
 
   const productOptions = useMemo(() => {
@@ -89,6 +99,23 @@ export function ProductsPage() {
     for (const product of topPagerank.data ?? []) seen.set(product.product_id, product)
     return Array.from(seen.values())
   }, [topSelling.data, topRevenue.data, topPagerank.data])
+  const productDetail = useMemo(() => {
+    if (!detailProductId) return null
+    const selling = (topSelling.data ?? []).find((item) => item.product_id === detailProductId)
+    const revenue = (topRevenue.data ?? []).find((item) => item.product_id === detailProductId)
+    const pagerank = (topPagerank.data ?? []).find((item) => item.product_id === detailProductId)
+    const associations = (boughtTogether.data ?? []).filter((item) => item.product_id === detailProductId)
+    const base = selling ?? revenue ?? pagerank ?? associations[0]
+    if (!base) return null
+    return { base, selling, revenue, pagerank, associations }
+  }, [boughtTogether.data, detailProductId, topPagerank.data, topRevenue.data, topSelling.data])
+
+  function askAboutProduct() {
+    const name = productDetail?.base.product_name ?? productDetail?.base.product_code ?? 'este produto'
+    navigate('/oraculo', {
+      state: { question: `Analise o desempenho e oportunidades de cross-sell do produto ${name}.` },
+    })
+  }
 
   return (
     <div className="space-y-6">
@@ -155,6 +182,7 @@ export function ProductsPage() {
                 emptyTitle="Nenhum produto vendido ainda"
                 emptyDescription="Sincronize pedidos e projete-os no grafo para ver o ranking aqui."
                 getRowId={(row) => row.product_id}
+                onRowClick={(row) => setDetailProductId(row.product_id)}
                 searchable
                 searchPlaceholder="Buscar produto ou código..."
               />
@@ -166,6 +194,7 @@ export function ProductsPage() {
                 loading={topRevenue.isLoading}
                 emptyTitle="Nenhum faturamento calculado ainda"
                 getRowId={(row) => row.product_id}
+                onRowClick={(row) => setDetailProductId(row.product_id)}
                 searchable
                 searchPlaceholder="Buscar produto ou código..."
               />
@@ -178,6 +207,7 @@ export function ProductsPage() {
                 emptyTitle="PageRank ainda não calculado"
                 emptyDescription='Rode "Rodar algoritmos" na Home para calcular o PageRank de produtos.'
                 getRowId={(row) => row.product_id}
+                onRowClick={(row) => setDetailProductId(row.product_id)}
                 searchable
                 searchPlaceholder="Buscar produto ou código..."
               />
@@ -190,6 +220,7 @@ export function ProductsPage() {
                 emptyTitle="Nenhuma regra de associação calculada ainda"
                 emptyDescription='Rode "Rodar algoritmos" na Home para gerar as regras de produtos comprados juntos.'
                 getRowId={(row) => `${row.product_id}-${row.related_product_id}`}
+                onRowClick={(row) => setDetailProductId(row.product_id)}
                 searchable
                 searchPlaceholder="Buscar produto relacionado..."
               />
@@ -233,6 +264,12 @@ export function ProductsPage() {
           )}
         </div>
       </SectionCard>
+
+      <ProductInsightSheet
+        detail={productDetail}
+        onClose={() => setDetailProductId(null)}
+        onAsk={askAboutProduct}
+      />
     </div>
   )
 }
@@ -245,6 +282,91 @@ function ProductSignal({ label, value }: { label: string; value: string }) {
         <Sparkles className="size-4 text-teal-200" />
       </div>
       <p className="mt-1 truncate text-lg font-semibold">{value}</p>
+    </div>
+  )
+}
+
+function ProductInsightSheet({
+  detail,
+  onClose,
+  onAsk,
+}: {
+  detail: {
+    base: { product_id: string; product_name: string | null; product_code: string | null }
+    selling?: TopSellingProduct
+    revenue?: TopRevenueProduct
+    pagerank?: TopPageRankProduct
+    associations: BoughtTogetherPair[]
+  } | null
+  onClose: () => void
+  onAsk: () => void
+}) {
+  return (
+    <Sheet open={Boolean(detail)} onOpenChange={(open) => !open && onClose()}>
+      <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-xl">
+        <SheetHeader>
+          <SheetTitle>{detail?.base.product_name ?? 'Produto'}</SheetTitle>
+          <SheetDescription>Código {detail?.base.product_code ?? '—'}</SheetDescription>
+        </SheetHeader>
+
+        {detail ? (
+          <div className="space-y-5 px-4 pb-6">
+            <div className="dark-panel relative overflow-hidden rounded-3xl p-4">
+              <div className="surface-glow absolute right-0 top-0 h-28 w-28 rounded-full bg-teal-400/20 blur-2xl" />
+              <div className="relative grid gap-3 sm:grid-cols-3">
+                <ProductMetric label="Qtd. vendida" value={formatNumber(detail.selling?.quantity_sold)} />
+                <ProductMetric label="Faturamento" value={formatCurrency(detail.revenue?.revenue)} />
+                <ProductMetric
+                  label="PageRank"
+                  value={
+                    detail.pagerank?.pagerank == null
+                      ? '—'
+                      : formatDecimal(detail.pagerank.pagerank, 4)
+                  }
+                />
+              </div>
+            </div>
+
+            <Button className="w-full rounded-2xl" onClick={onAsk}>
+              <Bot className="size-4" />
+              Perguntar ao Oráculo sobre este produto
+            </Button>
+
+            <div className="rounded-2xl border bg-card p-4 shadow-sm">
+              <h3 className="mb-3 text-sm font-semibold">Comprado junto</h3>
+              {detail.associations.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nenhuma associação encontrada.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {detail.associations.map((item) => (
+                    <li
+                      key={`${item.product_id}-${item.related_product_id}`}
+                      className="rounded-xl border bg-muted/25 px-3 py-2"
+                    >
+                      <p className="truncate text-sm font-medium">
+                        {item.related_product_name ?? 'Produto relacionado'}
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Lift {formatDecimal(item.lift, 2)} · Confiança{' '}
+                        {formatDecimal(item.confidence, 2)}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        ) : null}
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+function ProductMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.075] p-3">
+      <p className="text-xs text-white/45">{label}</p>
+      <p className="mt-1 truncate text-sm font-semibold">{value}</p>
     </div>
   )
 }

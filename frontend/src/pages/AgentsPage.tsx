@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft,
@@ -11,6 +11,7 @@ import {
   Copy,
   Globe,
   ImageIcon,
+  ImageOff,
   Info,
   Loader2,
   Pencil,
@@ -98,6 +99,9 @@ const VIDEO_SIZE_OPTIONS: { value: VideoSize; label: string }[] = [
 ]
 
 const VIDEO_SECONDS_OPTIONS: VideoSeconds[] = ['4', '8', '12']
+type AgentScopeFilter = 'all' | 'mine' | 'global'
+type AgentKindFilter = 'all' | AgentKind
+type AgentStatusFilter = 'all' | 'active' | 'inactive'
 
 export function AgentsPage() {
   const authUser = useAuthUser<AuthUser>()
@@ -224,16 +228,24 @@ function AgentLibrary({
 }) {
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
+  const [scope, setScope] = useState<AgentScopeFilter>('all')
+  const [kind, setKind] = useState<AgentKindFilter>('all')
+  const [status, setStatus] = useState<AgentStatusFilter>('all')
 
   const filteredAgents = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase()
-    if (!normalized) return agents
-    return agents.filter((agent) =>
-      [agent.name, agent.description, agent.usage_instructions]
+    return agents.filter((agent) => {
+      if (scope === 'mine' && agent.company_id !== myCompanyId) return false
+      if (scope === 'global' && !agent.is_global) return false
+      if (kind !== 'all' && agent.kind !== kind) return false
+      if (status === 'active' && !agent.is_active) return false
+      if (status === 'inactive' && agent.is_active) return false
+      if (!normalized) return true
+      return [agent.name, agent.description, agent.usage_instructions, agent.system_prompt]
         .filter(Boolean)
-        .some((value) => value?.toLocaleLowerCase().includes(normalized)),
-    )
-  }, [agents, query])
+        .some((value) => value?.toLocaleLowerCase().includes(normalized))
+    })
+  }, [agents, kind, myCompanyId, query, scope, status])
 
   const totalPages = Math.max(1, Math.ceil(filteredAgents.length / AGENTS_PER_PAGE))
   const currentPage = Math.min(page, totalPages)
@@ -244,7 +256,7 @@ function AgentLibrary({
 
   useEffect(() => {
     setPage(1)
-  }, [query, agents.length])
+  }, [query, agents.length, scope, kind, status])
 
   const ownedCount = agents.filter((agent) => agent.company_id === myCompanyId).length
   const globalCount = agents.filter((agent) => agent.is_global).length
@@ -254,7 +266,7 @@ function AgentLibrary({
     return (
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {Array.from({ length: 6 }).map((_, index) => (
-          <div key={index} className="h-44 animate-pulse rounded-xl border bg-muted" />
+          <div key={index} className="h-56 animate-pulse rounded-3xl border bg-muted/70" />
         ))}
       </div>
     )
@@ -267,6 +279,12 @@ function AgentLibrary({
           icon={Bot}
           title="Nenhum agente ainda"
           description="Crie o primeiro agente definindo instruções e ele aparecerá nesta biblioteca."
+          action={
+            <Button onClick={onCreate}>
+              <Plus className="size-4" />
+              Criar agente
+            </Button>
+          }
         />
       </div>
     )
@@ -274,14 +292,15 @@ function AgentLibrary({
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
+      <div className="glass-panel rounded-3xl p-3">
+      <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Buscar por nome, descrição ou instrução"
-            className="h-10 pl-9"
+            className="h-11 rounded-2xl bg-card pl-9"
           />
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -291,6 +310,20 @@ function AgentLibrary({
           <Badge variant="outline">{activeCount} ativos</Badge>
         </div>
       </div>
+      <div className="mt-3 flex flex-wrap gap-2 border-t border-border/60 pt-3">
+        <SegmentButton active={scope === 'all'} onClick={() => setScope('all')}>Todos</SegmentButton>
+        <SegmentButton active={scope === 'mine'} onClick={() => setScope('mine')}>Seus</SegmentButton>
+        <SegmentButton active={scope === 'global'} onClick={() => setScope('global')}>Globais</SegmentButton>
+        <span className="mx-1 hidden h-7 w-px bg-border sm:block" />
+        <SegmentButton active={kind === 'all'} onClick={() => setKind('all')}>Todos os tipos</SegmentButton>
+        <SegmentButton active={kind === 'chat'} onClick={() => setKind('chat')}>Chat</SegmentButton>
+        <SegmentButton active={kind === 'image_to_video'} onClick={() => setKind('image_to_video')}>Vídeo</SegmentButton>
+        <span className="mx-1 hidden h-7 w-px bg-border sm:block" />
+        <SegmentButton active={status === 'all'} onClick={() => setStatus('all')}>Qualquer status</SegmentButton>
+        <SegmentButton active={status === 'active'} onClick={() => setStatus('active')}>Ativos</SegmentButton>
+        <SegmentButton active={status === 'inactive'} onClick={() => setStatus('inactive')}>Inativos</SegmentButton>
+      </div>
+      </div>
 
       {filteredAgents.length === 0 ? (
         <div className="flex min-h-[18rem] items-center justify-center rounded-xl border bg-card p-6 shadow-sm">
@@ -298,6 +331,19 @@ function AgentLibrary({
             icon={Search}
             title="Nenhum agente encontrado"
             description="Ajuste a busca para ver outros agentes disponíveis."
+            action={
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setQuery('')
+                  setScope('all')
+                  setKind('all')
+                  setStatus('all')
+                }}
+              >
+                Limpar filtros
+              </Button>
+            }
           />
         </div>
       ) : (
@@ -313,7 +359,7 @@ function AgentLibrary({
             ))}
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-3 py-2.5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-card/86 px-3 py-2.5 shadow-sm shadow-slate-950/[0.03]">
             <p className="text-sm text-muted-foreground">
               Página {currentPage} de {totalPages} · {filteredAgents.length} resultado
               {filteredAgents.length === 1 ? '' : 's'}
@@ -350,6 +396,28 @@ function AgentLibrary({
   )
 }
 
+function SegmentButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <Button
+      type="button"
+      variant={active ? 'secondary' : 'ghost'}
+      size="sm"
+      className="rounded-xl"
+      onClick={onClick}
+    >
+      {children}
+    </Button>
+  )
+}
+
 function AgentCard({
   agent,
   mine,
@@ -367,15 +435,21 @@ function AgentCard({
     <button
       type="button"
       onClick={onClick}
-      className="group flex min-h-44 w-full flex-col rounded-xl border bg-card p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md focus-visible:border-primary focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+      className="group relative flex min-h-60 w-full flex-col overflow-hidden rounded-3xl border bg-card/88 p-4 text-left shadow-sm shadow-slate-950/[0.035] transition hover:-translate-y-1 hover:border-primary/35 hover:shadow-xl hover:shadow-slate-950/[0.08] focus-visible:border-primary focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
     >
-      <div className="flex items-start gap-3">
-        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15 transition group-hover:bg-primary group-hover:text-primary-foreground">
-          <Bot className="size-5" />
+      <div className="surface-glow pointer-events-none absolute -right-12 -top-12 h-28 w-28 rounded-full bg-primary/10 blur-2xl" />
+      <div className="relative flex items-start gap-3">
+        <div
+          className={cn(
+            'flex size-12 shrink-0 items-center justify-center rounded-2xl text-white shadow-lg transition group-hover:scale-105',
+            agent.kind === 'image_to_video' ? 'bg-violet-500 shadow-violet-500/20' : 'bg-primary shadow-primary/20',
+          )}
+        >
+          {agent.kind === 'image_to_video' ? <Video className="size-5" /> : <Bot className="size-5" />}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
-            <h3 className="min-w-0 text-base font-semibold leading-6 tracking-tight">
+            <h3 className="min-w-0 text-base font-semibold leading-6 tracking-normal">
               {agent.name}
             </h3>
             {agent.is_global ? (
@@ -394,8 +468,11 @@ function AgentCard({
         </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Badge variant={agent.is_active ? 'secondary' : 'outline'}>
+      <div className="relative mt-4 flex flex-wrap gap-2">
+        <Badge
+          variant={agent.is_active ? 'secondary' : 'outline'}
+          className={agent.is_active ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : ''}
+        >
           {agent.is_active ? 'Ativo' : 'Inativo'}
         </Badge>
         <Badge variant="outline">{mine ? 'Seu agente' : 'Compartilhado'}</Badge>
@@ -408,12 +485,37 @@ function AgentCard({
         {agent.uses_brand_archetype ? <Badge variant="outline">Usa arquétipo</Badge> : null}
       </div>
 
-      <div className="mt-auto pt-4">
-        <div className="rounded-lg border bg-muted/30 px-3 py-2">
+      <div className="relative mt-4 grid gap-2 rounded-2xl border bg-muted/25 p-3">
+        <div className="flex items-center justify-between gap-3 text-xs">
+          <span className="text-muted-foreground">Modelo</span>
+          <span className="truncate font-medium">{agent.model || 'Padrão'}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3 text-xs">
+          <span className="text-muted-foreground">Formato</span>
+          <span className="font-medium">
+            {agent.kind === 'image_to_video'
+              ? `${agent.video_provider === 'openrouter' ? 'OpenRouter' : 'Sora'}`
+              : agent.response_format === 'json'
+                ? 'JSON'
+                : 'Texto'}
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-3 text-xs">
+          <span className="text-muted-foreground">Atualizado</span>
+          <span className="font-medium"><RelativeTime value={agent.updated_at} /></span>
+        </div>
+      </div>
+
+      <div className="relative mt-auto pt-4">
+        <div className="rounded-2xl border bg-card px-3 py-2 shadow-sm">
           <p className="line-clamp-1 text-xs font-medium text-foreground/80">{outputLabel}</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {agent.response_format === 'json' ? 'Resposta estruturada' : 'Resposta em texto'}
           </p>
+        </div>
+        <div className="mt-3 flex items-center justify-between text-xs font-medium text-primary">
+          <span>Abrir workspace</span>
+          <Play className="size-3.5 transition group-hover:translate-x-1" />
         </div>
       </div>
     </button>
@@ -565,22 +667,29 @@ function AgentWorkspace({
 
   return (
     <>
-      <div className="space-y-3 border-b p-4">
+      <div className="dark-panel relative overflow-hidden border-b border-white/10 p-4 sm:p-5">
+        <div className="surface-glow absolute right-8 top-0 h-36 w-36 rounded-full bg-violet-400/18 blur-3xl" />
+        <div className="relative space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-3">
-            <Button variant="outline" size="icon" className="mt-1 shrink-0" onClick={onBack}>
+            <Button
+              variant="outline"
+              size="icon"
+              className="mt-1 shrink-0 border-white/10 bg-white/[0.08] text-white hover:bg-white/[0.14]"
+              onClick={onBack}
+            >
               <ArrowLeft className="size-4" />
             </Button>
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/15">
-              <Bot className="size-5" />
+            <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-white text-slate-950 shadow-lg shadow-black/20">
+              {isVideoKind ? <Video className="size-5" /> : <Bot className="size-5" />}
             </div>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-base font-semibold tracking-tight">{agent.name}</h2>
+                <h2 className="text-xl font-semibold tracking-normal">{agent.name}</h2>
                 {agent.is_global ? (
                   <Badge
                     variant="outline"
-                    className="border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-400"
+                    className="border-white/10 bg-white/[0.08] text-white"
                   >
                     <Globe className="size-3" />
                     Global
@@ -589,13 +698,18 @@ function AgentWorkspace({
                 {!agent.is_active ? <Badge variant="outline">Inativo</Badge> : null}
               </div>
               {agent.description ? (
-                <p className="mt-0.5 text-sm text-muted-foreground">{agent.description}</p>
+                <p className="mt-1 max-w-2xl text-sm leading-6 text-white/58">{agent.description}</p>
               ) : null}
             </div>
           </div>
           {mine ? (
             <div className="flex shrink-0 items-center gap-2">
-              <Button variant="outline" size="sm" onClick={onEdit}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-white/10 bg-white/[0.08] text-white hover:bg-white/[0.14]"
+                onClick={onEdit}
+              >
                 <Pencil className="size-4" />
                 Editar
               </Button>
@@ -608,27 +722,39 @@ function AgentWorkspace({
         </div>
 
         {agent.usage_instructions ? (
-          <div className="flex gap-2.5 rounded-lg border border-primary/15 bg-primary/5 p-3 text-sm">
-            <div className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+          <div className="flex gap-2.5 rounded-2xl border border-white/10 bg-white/[0.075] p-3 text-sm">
+            <div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-white/10 text-teal-200">
               <Info className="size-3" />
             </div>
-            <p className="whitespace-pre-wrap leading-6 text-foreground/90">
+            <p className="whitespace-pre-wrap leading-6 text-white/72">
               {agent.usage_instructions}
             </p>
           </div>
         ) : null}
+        </div>
       </div>
 
       <ScrollArea className="min-h-0 flex-1">
-        <div className="flex w-full flex-col gap-4 px-4 py-5 xl:px-8">
+        <div className="grid w-full gap-4 px-4 py-5 xl:grid-cols-[minmax(0,1fr)_340px] xl:px-8">
+          <div className="min-w-0 space-y-4">
           {!agent.is_active ? (
-            <p className="text-sm text-muted-foreground">
-              Este agente está inativo. Ative-o em "Editar" pra poder executar.
-            </p>
+            <EmptyState
+              icon={Bot}
+              title="Agente inativo"
+              description='Ative este agente em "Editar" para liberar execuções.'
+              action={
+                mine ? (
+                  <Button variant="outline" onClick={onEdit}>
+                    <Pencil className="size-4" />
+                    Editar agente
+                  </Button>
+                ) : null
+              }
+            />
           ) : (
             <form
               onSubmit={onSubmit}
-              className="space-y-2.5 rounded-xl border bg-background p-3 shadow-sm transition focus-within:border-primary/40 focus-within:shadow-md"
+              className="space-y-2.5 rounded-3xl border bg-card/88 p-3 shadow-sm shadow-slate-950/[0.035] transition focus-within:border-primary/40 focus-within:shadow-lg"
             >
               {isVideoKind ? (
                 <div className="space-y-2.5">
@@ -760,7 +886,9 @@ function AgentWorkspace({
           ) : null}
 
           <div ref={bottomRef} />
+          </div>
 
+          <aside className="min-w-0 rounded-3xl border bg-card/70 p-3 shadow-sm shadow-slate-950/[0.035] xl:sticky xl:top-24 xl:self-start">
           <RunHistory
             runs={runs.data}
             loading={runs.isLoading}
@@ -772,6 +900,7 @@ function AgentWorkspace({
               setViewedRun(run)
             }}
           />
+          </aside>
         </div>
       </ScrollArea>
     </>
@@ -829,13 +958,13 @@ function ResultCard({
 
   return (
     <div className="flex items-start gap-3">
-      <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary ring-1 ring-primary/15">
+      <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
         <Sparkles className="size-4" />
       </div>
-      <div className="min-w-0 flex-1 space-y-3 rounded-2xl border bg-background px-4 py-3 shadow-sm">
+      <div className="min-w-0 flex-1 space-y-3 rounded-3xl border bg-card/90 px-4 py-4 shadow-sm shadow-slate-950/[0.04]">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span className="font-medium">{agentName}</span>
+            <span className="font-semibold">{agentName}</span>
             {isStreaming ? (
               <span className="text-xs text-muted-foreground">gerando resposta…</span>
             ) : run ? (
@@ -893,7 +1022,7 @@ function ResultCard({
             </div>
           </div>
         ) : (
-          <p className="whitespace-pre-wrap text-sm leading-6">
+          <p className="whitespace-pre-wrap text-sm leading-7">
             {text || (isStreaming ? '' : 'Sem resposta.')}
             {isStreaming ? (
               <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-foreground align-middle" />
@@ -902,7 +1031,7 @@ function ResultCard({
         )}
 
         {!isStreaming && run?.output?.data ? (
-          <div className="rounded-lg border bg-muted/40">
+          <div className="rounded-2xl border bg-muted/40">
             <button
               type="button"
               onClick={() => setShowData((open) => !open)}
@@ -932,7 +1061,7 @@ function ResultCard({
 
         {canApply && !isEditing ? (
           <div className="flex items-center gap-2.5 border-t pt-3">
-            <Button size="sm" disabled={applying} onClick={onApply}>
+            <Button size="sm" className="rounded-xl" disabled={applying} onClick={onApply}>
               {applying ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (
@@ -1029,6 +1158,8 @@ function CatalogImagePicker({
     }))
   })
   const atLimit = maxImages !== undefined && value.length >= maxImages
+  const selectedOptions = value.map((url) => options.find((option) => option.url === url)).filter(Boolean) as ProductImageOption[]
+  const limitLabel = maxImages === 1 ? '1 foto' : maxImages ? `até ${maxImages} fotos` : 'múltiplas fotos'
 
   function toggle(url: string) {
     if (value.includes(url)) {
@@ -1046,104 +1177,201 @@ function CatalogImagePicker({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="flex w-full items-center gap-3 rounded-lg border bg-muted/25 p-2 text-left transition hover:bg-muted"
-      >
+      <div className="rounded-3xl border bg-card/86 p-3 shadow-sm shadow-slate-950/[0.035]">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
+              <ImageIcon className="size-5" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold">Fotos do produto</p>
+              <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                {maxImages === 1
+                  ? 'Sora usa uma imagem principal como referência.'
+                  : `Este provedor aceita ${limitLabel} como referência visual.`}
+              </p>
+            </div>
+          </div>
+          <Button type="button" className="rounded-2xl" onClick={() => setOpen(true)}>
+            <ImageIcon className="size-4" />
+            Escolher fotos
+          </Button>
+        </div>
+
         {value.length > 0 ? (
-          <div className="flex -space-x-2">
-            {value.slice(0, 3).map((url) => (
-              <img
-                key={url}
-                src={url}
-                alt=""
-                className="size-12 shrink-0 rounded-md border-2 border-background object-cover"
-              />
+          <div className="mt-3 grid gap-2 sm:grid-cols-4">
+            {value.slice(0, 4).map((url, index) => (
+              <div key={url} className="group relative overflow-hidden rounded-2xl border bg-muted">
+                <img src={url} alt="" className="aspect-square w-full object-cover" />
+                <button
+                  type="button"
+                  className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition group-hover:opacity-100"
+                  onClick={() => toggle(url)}
+                  aria-label="Remover foto"
+                >
+                  <X className="size-4" />
+                </button>
+                <span className="absolute bottom-2 left-2 rounded-full bg-black/65 px-2 py-0.5 text-[11px] font-medium text-white">
+                  #{index + 1}
+                </span>
+              </div>
             ))}
+            {value.length > 4 ? (
+              <button
+                type="button"
+                onClick={() => setOpen(true)}
+                className="flex aspect-square items-center justify-center rounded-2xl border border-dashed bg-muted/25 text-sm font-medium text-muted-foreground"
+              >
+                +{value.length - 4}
+              </button>
+            ) : null}
           </div>
         ) : (
-          <div className="flex size-12 shrink-0 items-center justify-center rounded-md bg-muted">
-            <ImageIcon className="size-5 text-muted-foreground" />
-          </div>
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="mt-3 flex min-h-28 w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed bg-muted/25 text-center transition hover:bg-muted"
+          >
+            <ImageIcon className="size-6 text-muted-foreground" />
+            <span className="text-sm font-medium">Nenhuma foto selecionada</span>
+            <span className="text-xs text-muted-foreground">Escolha imagens do catálogo para liberar a geração.</span>
+          </button>
         )}
-        <div className="min-w-0">
-          <p className="text-sm font-medium">
-            {value.length > 0
-              ? `${value.length} imagem${value.length > 1 ? 'ns' : ''} selecionada${value.length > 1 ? 's' : ''}`
-              : 'Selecionar imagem do catálogo'}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {maxImages === 1
-              ? 'Clique para escolher uma foto'
-              : `Clique para escolher${maxImages ? ` até ${maxImages} fotos` : ' uma ou mais fotos'}`}
-          </p>
-        </div>
-      </button>
+      </div>
+
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="flex max-h-[85vh] w-full max-w-4xl flex-col p-0 sm:max-w-4xl">
-          <DialogHeader className="border-b px-4 py-3">
-            <DialogTitle>Selecionar fotos do catálogo</DialogTitle>
+        <DialogContent className="flex max-h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-3xl p-0 sm:max-w-6xl">
+          <DialogHeader className="dark-panel relative overflow-hidden rounded-none border-0 px-5 py-5">
+            <div className="surface-glow absolute right-8 top-0 h-32 w-32 rounded-full bg-violet-400/20 blur-3xl" />
+            <DialogTitle className="relative text-white">Selecionar fotos do catálogo</DialogTitle>
             <DialogDescription>
-              Todas as fotos e variações de cada produto aparecem aqui, não só a foto
-              principal.
+              Escolha {limitLabel}. Todas as fotos e variações de cada produto aparecem aqui.
             </DialogDescription>
           </DialogHeader>
-          <div className="px-4 pt-3">
-            <Input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Buscar produto…"
-              className="h-9"
-              autoFocus
-            />
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            {products.isLoading ? (
-              <p className="p-6 text-center text-sm text-muted-foreground">Carregando…</p>
-            ) : options.length === 0 ? (
-              <p className="p-6 text-center text-sm text-muted-foreground">
-                Nenhum produto com foto encontrado.
-              </p>
-            ) : (
-              <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
-                {options.map((option) => {
-                  const selected = value.includes(option.url)
-                  return (
-                    <button
-                      key={option.key}
-                      type="button"
-                      disabled={!selected && atLimit}
-                      onClick={() => toggle(option.url)}
-                      className={cn(
-                        'relative space-y-1 rounded-md p-1 text-left transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40',
-                        selected && 'ring-2 ring-primary',
-                      )}
-                    >
-                      {selected ? (
-                        <span className="absolute right-1.5 top-1.5 z-10 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                          <Check className="size-3" />
-                        </span>
-                      ) : null}
-                      {option.total > 1 ? (
-                        <span className="absolute left-1.5 top-1.5 z-10 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
-                          {option.index}/{option.total}
-                        </span>
-                      ) : null}
-                      <img
-                        src={option.url}
-                        alt=""
-                        className="aspect-square w-full rounded-md object-cover"
-                      />
-                      <p className="line-clamp-1 text-xs">{option.productName}</p>
-                    </button>
-                  )
-                })}
+
+          <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="flex min-h-0 flex-col">
+              <div className="border-b bg-background/80 px-4 py-3 backdrop-blur">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Buscar produto por nome ou código..."
+                    className="h-11 rounded-2xl bg-card pl-9"
+                    autoFocus
+                  />
+                </div>
               </div>
-            )}
+
+              <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                {products.isLoading ? (
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+                    {Array.from({ length: 10 }).map((_, index) => (
+                      <div key={index} className="aspect-[0.78] animate-pulse rounded-3xl bg-muted" />
+                    ))}
+                  </div>
+                ) : options.length === 0 ? (
+                  <EmptyState
+                    icon={ImageOff}
+                    title="Nenhum produto com foto"
+                    description="Ajuste a busca ou sincronize produtos com mídia no catálogo."
+                  />
+                ) : (
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+                    {options.map((option) => {
+                      const selected = value.includes(option.url)
+                      return (
+                        <button
+                          key={option.key}
+                          type="button"
+                          disabled={!selected && atLimit}
+                          onClick={() => toggle(option.url)}
+                          className={cn(
+                            'group relative overflow-hidden rounded-3xl border bg-card p-2 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-40',
+                            selected && 'border-primary bg-primary/5 ring-2 ring-primary/25',
+                          )}
+                        >
+                          <div className="relative overflow-hidden rounded-2xl bg-muted">
+                            {selected ? (
+                              <span className="absolute right-2 top-2 z-10 flex size-7 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg">
+                                <Check className="size-4" />
+                              </span>
+                            ) : null}
+                            {option.total > 1 ? (
+                              <span className="absolute left-2 top-2 z-10 rounded-full bg-black/65 px-2 py-0.5 text-[10px] font-medium text-white">
+                                {option.index}/{option.total}
+                              </span>
+                            ) : null}
+                            <img
+                              src={option.url}
+                              alt=""
+                              className="aspect-square w-full object-cover transition duration-300 group-hover:scale-105"
+                            />
+                          </div>
+                          <p className="mt-2 line-clamp-2 min-h-8 text-xs font-medium leading-4">
+                            {option.productName}
+                          </p>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <aside className="border-t bg-muted/25 p-4 lg:border-l lg:border-t-0">
+              <div className="sticky top-0 space-y-4">
+                <div>
+                  <p className="text-sm font-semibold">Selecionadas</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {value.length} de {maxImages ?? 'várias'} foto(s)
+                  </p>
+                </div>
+
+                {value.length === 0 ? (
+                  <div className="rounded-3xl border border-dashed bg-card/70 p-4 text-center text-sm text-muted-foreground">
+                    Escolha uma imagem no grid.
+                  </div>
+                ) : (
+                  <div className="grid gap-3">
+                    {value.map((url, index) => {
+                      const option = selectedOptions.find((item) => item.url === url)
+                      return (
+                        <div key={url} className="overflow-hidden rounded-3xl border bg-card shadow-sm">
+                          <img src={url} alt="" className="aspect-video w-full object-cover" />
+                          <div className="flex items-center justify-between gap-3 p-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-xs font-medium">
+                                {option?.productName ?? `Foto ${index + 1}`}
+                              </p>
+                              <p className="text-[11px] text-muted-foreground">Referência #{index + 1}</p>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => toggle(url)}
+                            >
+                              <X className="size-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </aside>
           </div>
-          <DialogFooter className="border-t px-4 py-3">
-            <Button type="button" size="sm" onClick={() => setOpen(false)}>
+
+          <DialogFooter className="border-t bg-background/90 px-4 py-3 backdrop-blur">
+            {value.length > 0 ? (
+              <Button type="button" variant="outline" size="sm" onClick={() => onChange([])}>
+                Limpar seleção
+              </Button>
+            ) : null}
+            <Button type="button" size="sm" className="rounded-xl" onClick={() => setOpen(false)}>
               Concluído
             </Button>
           </DialogFooter>
@@ -1171,12 +1399,23 @@ function RunHistory({
   activeRunId: string | undefined
   onSelect: (run: AgentRun) => void
 }) {
-  if (loading) return <div className="h-16 animate-pulse rounded-lg bg-muted" />
-  if (!runs || runs.length === 0) return null
+  if (loading) return <div className="h-28 animate-pulse rounded-2xl bg-muted" />
+  if (!runs || runs.length === 0) {
+    return (
+      <EmptyState
+        icon={Clock}
+        title="Sem execuções"
+        description="As respostas geradas por este agente aparecerão aqui."
+      />
+    )
+  }
 
   return (
-    <div className="space-y-2 pt-2">
-      <p className="text-xs font-medium text-muted-foreground">Execuções anteriores</p>
+    <div className="space-y-3">
+      <div>
+        <p className="text-sm font-semibold">Histórico</p>
+        <p className="text-xs text-muted-foreground">{runs.length} execução(ões) registradas</p>
+      </div>
       <div className="space-y-1.5">
         {runs.map((run) => {
           const meta = RUN_STATUS_META[run.status] ?? RUN_STATUS_META.pending
@@ -1188,8 +1427,8 @@ function RunHistory({
               type="button"
               onClick={() => onSelect(run)}
               className={cn(
-                'flex w-full items-start gap-2 rounded-lg border p-2.5 text-left text-xs transition hover:bg-muted hover:shadow-sm',
-                active && 'border-primary/30 bg-primary/5',
+                'flex w-full items-start gap-2 rounded-2xl border bg-card/80 p-3 text-left text-xs transition hover:-translate-y-0.5 hover:bg-muted/50 hover:shadow-sm',
+                active && 'border-primary/40 bg-primary/10 ring-1 ring-primary/15',
               )}
             >
               <StatusIcon className={cn('mt-0.5 size-3.5 shrink-0', meta.className)} />
@@ -1374,7 +1613,7 @@ function AgentEditSheet({
 
   return (
     <Sheet open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
-      <SheetContent className="overflow-y-auto data-[side=right]:w-full data-[side=right]:sm:max-w-none data-[side=right]:lg:w-[45vw]">
+      <SheetContent className="overflow-y-auto data-[side=right]:w-full data-[side=right]:sm:max-w-none data-[side=right]:lg:w-[52vw]">
         <SheetHeader>
           <SheetTitle>{agent ? 'Editar agente' : 'Criar agente'}</SheetTitle>
           <SheetDescription>
@@ -1384,6 +1623,23 @@ function AgentEditSheet({
         </SheetHeader>
 
         <form className="space-y-4 px-4 pb-6" onSubmit={onSubmit}>
+          <div className="dark-panel relative overflow-hidden rounded-3xl p-4">
+            <div className="surface-glow absolute right-0 top-0 h-28 w-28 rounded-full bg-violet-400/20 blur-2xl" />
+            <div className="relative flex items-start gap-3">
+              <div className="flex size-11 items-center justify-center rounded-2xl bg-white text-slate-950">
+                <Wand2 className="size-5" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">Configuração do agente</p>
+                <p className="mt-1 text-xs leading-5 text-white/55">
+                  Deixe claro quando usar, como responder e se a saída vira uma ação aplicada no
+                  sistema.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-4 rounded-3xl border bg-card/82 p-4 shadow-sm sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="agent-name">Nome</Label>
             <Input
@@ -1416,8 +1672,9 @@ function AgentEditSheet({
               </p>
             ) : null}
           </div>
+          </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2 rounded-3xl border bg-card/82 p-4 shadow-sm">
             <Label htmlFor="agent-description">Descrição curta</Label>
             <Input
               id="agent-description"
@@ -1427,7 +1684,7 @@ function AgentEditSheet({
             />
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2 rounded-3xl border bg-card/82 p-4 shadow-sm">
             <Label htmlFor="agent-usage">Instruções para quem for usar</Label>
             <Textarea
               id="agent-usage"
@@ -1438,7 +1695,7 @@ function AgentEditSheet({
             />
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2 rounded-3xl border bg-card/82 p-4 shadow-sm">
             <Label htmlFor="agent-system-prompt">
               {isVideoKind ? 'Direção criativa base' : 'Como o agente deve se comportar'}
             </Label>

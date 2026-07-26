@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Activity, Filter, MapPin, Package, SlidersHorizontal, User } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Activity, Bot, Filter, MapPin, Package, SlidersHorizontal, User } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -370,7 +371,17 @@ function findSelectedLabel(facets: OrderFilterFacet[] | undefined, key: string, 
 }
 
 function OrderDetailSheet({ order, onClose }: { order: Order | null; onClose: () => void }) {
+  const navigate = useNavigate()
   const products = order?.products ?? []
+
+  function askAboutOrder() {
+    if (!order) return
+    navigate('/oraculo', {
+      state: {
+        question: `Analise o pedido #${order.code ?? order.external_order_id}: cliente, produtos, valor, status e possíveis ações comerciais.`,
+      },
+    })
+  }
 
   return (
     <Sheet open={Boolean(order)} onOpenChange={(open) => !open && onClose()}>
@@ -397,6 +408,11 @@ function OrderDetailSheet({ order, onClose }: { order: Order | null; onClose: ()
               <DetailTile icon={User} label="Cliente" value={getCustomerName(order)} />
               <DetailTile icon={MapPin} label="Localização" value={`${getCity(order)}/${getState(order)}`} />
             </div>
+
+            <Button className="w-full rounded-2xl" onClick={askAboutOrder}>
+              <Bot className="size-4" />
+              Perguntar ao Oráculo sobre este pedido
+            </Button>
 
             <div className="rounded-2xl border bg-card p-4 shadow-sm">
               <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
