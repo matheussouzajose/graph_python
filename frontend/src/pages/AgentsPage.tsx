@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft,
   Bot,
+  Check,
   CheckCircle2,
   ChevronDown,
   Clock,
@@ -37,7 +38,6 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Select,
@@ -55,7 +55,6 @@ import {
 } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { PageHeader } from '@/components/shared/PageHeader'
 import { RelativeTime } from '@/components/shared/RelativeTime'
 import {
   agentKeys,
@@ -74,6 +73,7 @@ import { useProducts } from '@/hooks/use-products'
 import { useAuthUser } from '@/lib/auth-kit-core'
 import { AGENT_OUTPUT_ACTIONS, AGENT_OUTPUT_ACTION_APPLY_LABEL } from '@/lib/agent-actions'
 import { fetchAgentRunVideo } from '@/lib/api'
+import { productImages } from '@/lib/product-images'
 import { cn } from '@/lib/utils'
 import type {
   Agent,
@@ -82,6 +82,7 @@ import type {
   AgentOutputAction,
   AgentResponseFormat,
   AgentRun,
+  AgentVideoProvider,
   AuthUser,
   VideoSeconds,
   VideoSize,
@@ -120,23 +121,46 @@ export function AgentsPage() {
   }, [agents.data, myCompanyId])
 
   const selectedAgent = sortedAgents.find((agent) => agent.id === selectedId) ?? null
+  const ownedCount = sortedAgents.filter((agent) => agent.company_id === myCompanyId).length
+  const globalCount = sortedAgents.filter((agent) => agent.is_global).length
+  const activeCount = sortedAgents.filter((agent) => agent.is_active).length
 
   return (
     <div className="flex min-h-[calc(100vh-7rem)] flex-col gap-4">
-      <PageHeader
-        title="Agentes"
-        description="Escolha um agente da biblioteca para executar, revisar resultados e aplicar saídas estruturadas quando fizer sentido."
-        icon={Bot}
-        actions={
-          <Button onClick={() => setEditing('new')}>
-            <Plus className="size-4" />
-            Criar agente
-          </Button>
-        }
-      />
+      <section className="dark-panel relative overflow-hidden rounded-3xl p-5 sm:p-6">
+        <div className="surface-glow absolute right-8 top-0 h-44 w-44 rounded-full bg-violet-400/18 blur-3xl" />
+        <div className="absolute -bottom-20 left-1/4 h-44 w-44 rounded-full bg-teal-300/12 blur-3xl" />
+        <div className="relative grid gap-5 lg:grid-cols-[1fr_420px] lg:items-center">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs text-violet-100">
+              <Wand2 className="size-3.5" />
+              Workbench de IA
+            </div>
+            <h2 className="mt-4 max-w-2xl text-3xl font-semibold tracking-normal">
+              Execute agentes como ferramentas de operação, não como formulários soltos.
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-white/55">
+              Biblioteca, execução, revisão e aplicação de saída estruturada ficam no mesmo fluxo
+              para acelerar tarefas comerciais.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <AgentSignal label="Ativos" value={activeCount} />
+            <AgentSignal label="Seus" value={ownedCount} />
+            <AgentSignal label="Globais" value={globalCount} />
+            <Button
+              className="h-auto rounded-2xl bg-white text-slate-950 shadow-lg shadow-black/20 hover:bg-white/90 sm:col-span-3"
+              onClick={() => setEditing('new')}
+            >
+              <Plus className="size-4" />
+              Criar agente
+            </Button>
+          </div>
+        </div>
+      </section>
 
       {selectedAgent ? (
-        <div className="flex min-h-[calc(100vh-12rem)] flex-col overflow-hidden rounded-xl border bg-card shadow-sm">
+        <div className="flex min-h-[calc(100vh-12rem)] flex-col overflow-hidden rounded-3xl border bg-card/86 shadow-sm shadow-slate-950/[0.04] backdrop-blur">
           <AgentWorkspace
             agent={selectedAgent}
             mine={selectedAgent.company_id === myCompanyId}
@@ -169,6 +193,18 @@ export function AgentsPage() {
           <DeleteAgentDialogContent agent={deleting} onClose={() => setDeleting(null)} />
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+function AgentSignal({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.075] p-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-white/45">{label}</p>
+        <Bot className="size-4 text-violet-200" />
+      </div>
+      <p className="mt-1 truncate text-lg font-semibold">{value}</p>
     </div>
   )
 }
@@ -451,7 +487,7 @@ function AgentWorkspace({
   const [message, setMessage] = useState('')
   const [showContext, setShowContext] = useState(false)
   const [contextRows, setContextRows] = useState<{ id: string; key: string; value: string }[]>([])
-  const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null)
+  const [selectedImageUrls, setSelectedImageUrls] = useState<string[]>([])
   const [viewedRun, setViewedRun] = useState<AgentRun | null>(null)
   const [editingText, setEditingText] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement | null>(null)
@@ -471,7 +507,7 @@ function AgentWorkspace({
     setMessage('')
     setContextRows([])
     setShowContext(false)
-    setSelectedImageUrl(null)
+    setSelectedImageUrls([])
     setViewedRun(null)
     setEditingText(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -485,12 +521,12 @@ function AgentWorkspace({
     event.preventDefault()
 
     if (isVideoKind) {
-      if (!selectedImageUrl || videoRunUnsettled) return
+      if (selectedImageUrls.length === 0 || videoRunUnsettled) return
       const videoMessage = message.trim() || 'Gere um vídeo publicitário curto para este produto.'
       setViewedRun(null)
       applyRun.reset()
       runVideo.mutate(
-        { id: agent.id, data: { message: videoMessage, image_urls: [selectedImageUrl] } },
+        { id: agent.id, data: { message: videoMessage, image_urls: selectedImageUrls } },
         {
           onSuccess: (run) => {
             setViewedRun(run)
@@ -596,7 +632,11 @@ function AgentWorkspace({
             >
               {isVideoKind ? (
                 <div className="space-y-2.5">
-                  <CatalogImagePicker value={selectedImageUrl} onChange={setSelectedImageUrl} />
+                  <CatalogImagePicker
+                    value={selectedImageUrls}
+                    onChange={setSelectedImageUrls}
+                    maxImages={agent.video_provider === 'openai' ? 1 : undefined}
+                  />
                   <Textarea
                     value={message}
                     onChange={(event) => setMessage(event.target.value)}
@@ -645,7 +685,9 @@ function AgentWorkspace({
                   {isVideoKind ? (
                     <Button
                       type="submit"
-                      disabled={!selectedImageUrl || runVideo.isPending || videoRunUnsettled}
+                      disabled={
+                        selectedImageUrls.length === 0 || runVideo.isPending || videoRunUnsettled
+                      }
                     >
                       {runVideo.isPending || videoRunUnsettled ? (
                         <Loader2 className="size-4 animate-spin" />
@@ -950,84 +992,164 @@ function RunVideoPlayer({ runId }: { runId: string }) {
   return <video controls src={blobUrl} className="w-full max-w-64 rounded-lg border bg-black" />
 }
 
+type ProductImageOption = {
+  key: string
+  url: string
+  productId: string
+  productName: string
+  /** Posição da foto dentro das variações do mesmo produto (1-based), só
+   * pra dar contexto visual — não é usado como identidade de seleção. */
+  index: number
+  total: number
+}
+
 function CatalogImagePicker({
   value,
   onChange,
+  maxImages,
 }: {
-  value: string | null
-  onChange: (url: string) => void
+  value: string[]
+  onChange: (urls: string[]) => void
+  /** `undefined` = sem limite (ex: OpenRouter, que aceita várias imagens
+   * dependendo do modelo). `1` trava seleção única (ex: Sora). */
+  maxImages?: number
 }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const products = useProducts(search, true, 24, 0)
-  const options = (products.data?.items ?? []).filter((product) => product.image_url)
+  const options: ProductImageOption[] = (products.data?.items ?? []).flatMap((product) => {
+    const images = productImages(product)
+    return images.map((image, index) => ({
+      key: `${product.id}:${image.url}`,
+      url: image.url,
+      productId: product.id,
+      productName: product.name ?? 'Produto sem nome',
+      index: index + 1,
+      total: images.length,
+    }))
+  })
+  const atLimit = maxImages !== undefined && value.length >= maxImages
+
+  function toggle(url: string) {
+    if (value.includes(url)) {
+      onChange(value.filter((selected) => selected !== url))
+      return
+    }
+    if (maxImages === 1) {
+      onChange([url])
+      setOpen(false)
+      return
+    }
+    if (atLimit) return
+    onChange([...value, url])
+  }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="flex w-full items-center gap-3 rounded-lg border bg-muted/25 p-2 text-left transition hover:bg-muted"
-        >
-          {value ? (
-            <img src={value} alt="" className="size-12 shrink-0 rounded-md object-cover" />
-          ) : (
-            <div className="flex size-12 shrink-0 items-center justify-center rounded-md bg-muted">
-              <ImageIcon className="size-5 text-muted-foreground" />
-            </div>
-          )}
-          <div className="min-w-0">
-            <p className="text-sm font-medium">
-              {value ? 'Imagem selecionada' : 'Selecionar imagem do catálogo'}
-            </p>
-            <p className="text-xs text-muted-foreground">Clique para escolher um produto</p>
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex w-full items-center gap-3 rounded-lg border bg-muted/25 p-2 text-left transition hover:bg-muted"
+      >
+        {value.length > 0 ? (
+          <div className="flex -space-x-2">
+            {value.slice(0, 3).map((url) => (
+              <img
+                key={url}
+                src={url}
+                alt=""
+                className="size-12 shrink-0 rounded-md border-2 border-background object-cover"
+              />
+            ))}
           </div>
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-96 p-0" align="start">
-        <div className="border-b p-2">
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Buscar produto…"
-            className="h-9"
-          />
+        ) : (
+          <div className="flex size-12 shrink-0 items-center justify-center rounded-md bg-muted">
+            <ImageIcon className="size-5 text-muted-foreground" />
+          </div>
+        )}
+        <div className="min-w-0">
+          <p className="text-sm font-medium">
+            {value.length > 0
+              ? `${value.length} imagem${value.length > 1 ? 'ns' : ''} selecionada${value.length > 1 ? 's' : ''}`
+              : 'Selecionar imagem do catálogo'}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {maxImages === 1
+              ? 'Clique para escolher uma foto'
+              : `Clique para escolher${maxImages ? ` até ${maxImages} fotos` : ' uma ou mais fotos'}`}
+          </p>
         </div>
-        <div className="max-h-72 overflow-y-auto p-2">
-          {products.isLoading ? (
-            <p className="p-3 text-center text-sm text-muted-foreground">Carregando…</p>
-          ) : options.length === 0 ? (
-            <p className="p-3 text-center text-sm text-muted-foreground">
-              Nenhum produto com imagem encontrado.
-            </p>
-          ) : (
-            <div className="grid grid-cols-3 gap-2">
-              {options.map((product) => (
-                <button
-                  key={product.id}
-                  type="button"
-                  onClick={() => {
-                    onChange(product.image_url as string)
-                    setOpen(false)
-                  }}
-                  className={cn(
-                    'space-y-1 rounded-md p-1 text-left transition hover:bg-muted',
-                    value === product.image_url && 'ring-2 ring-primary',
-                  )}
-                >
-                  <img
-                    src={product.image_url ?? undefined}
-                    alt=""
-                    className="aspect-square w-full rounded-md object-cover"
-                  />
-                  <p className="line-clamp-1 text-xs">{product.name}</p>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </PopoverContent>
-    </Popover>
+      </button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="flex max-h-[85vh] w-full max-w-4xl flex-col p-0 sm:max-w-4xl">
+          <DialogHeader className="border-b px-4 py-3">
+            <DialogTitle>Selecionar fotos do catálogo</DialogTitle>
+            <DialogDescription>
+              Todas as fotos e variações de cada produto aparecem aqui, não só a foto
+              principal.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="px-4 pt-3">
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Buscar produto…"
+              className="h-9"
+              autoFocus
+            />
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            {products.isLoading ? (
+              <p className="p-6 text-center text-sm text-muted-foreground">Carregando…</p>
+            ) : options.length === 0 ? (
+              <p className="p-6 text-center text-sm text-muted-foreground">
+                Nenhum produto com foto encontrado.
+              </p>
+            ) : (
+              <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5">
+                {options.map((option) => {
+                  const selected = value.includes(option.url)
+                  return (
+                    <button
+                      key={option.key}
+                      type="button"
+                      disabled={!selected && atLimit}
+                      onClick={() => toggle(option.url)}
+                      className={cn(
+                        'relative space-y-1 rounded-md p-1 text-left transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40',
+                        selected && 'ring-2 ring-primary',
+                      )}
+                    >
+                      {selected ? (
+                        <span className="absolute right-1.5 top-1.5 z-10 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                          <Check className="size-3" />
+                        </span>
+                      ) : null}
+                      {option.total > 1 ? (
+                        <span className="absolute left-1.5 top-1.5 z-10 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                          {option.index}/{option.total}
+                        </span>
+                      ) : null}
+                      <img
+                        src={option.url}
+                        alt=""
+                        className="aspect-square w-full rounded-md object-cover"
+                      />
+                      <p className="line-clamp-1 text-xs">{option.productName}</p>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+          <DialogFooter className="border-t px-4 py-3">
+            <Button type="button" size="sm" onClick={() => setOpen(false)}>
+              Concluído
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
@@ -1168,6 +1290,7 @@ function AgentEditSheet({
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [model, setModel] = useState('')
   const [temperature, setTemperature] = useState('0.3')
+  const [videoProvider, setVideoProvider] = useState<AgentVideoProvider>('openai')
   const [videoSize, setVideoSize] = useState<VideoSize>('720x1280')
   const [videoSeconds, setVideoSeconds] = useState<VideoSeconds>('8')
 
@@ -1185,12 +1308,27 @@ function AgentEditSheet({
     setIsGlobal(agent?.is_global ?? false)
     setModel(agent?.model ?? '')
     setTemperature(String(agent?.temperature ?? 0.3))
+    setVideoProvider(agent?.video_provider ?? 'openai')
     setVideoSize(agent?.video_size ?? '720x1280')
     setVideoSeconds(agent?.video_seconds ?? '8')
     setShowAdvanced(false)
   }, [open, agent])
 
   const isVideoKind = kind === 'image_to_video'
+
+  function handleProviderChange(next: AgentVideoProvider) {
+    setVideoProvider(next)
+    // Modelo/formato/duração são específicos de cada provedor (ex.: um
+    // model string do OpenRouter não é válido pra Sora) — trocar o
+    // provedor sempre reseta os três, mesmo editando um agente existente,
+    // pra evitar deixar uma combinação inconsistente para trás.
+    setModel('')
+    // Padrão deliberadamente o mais barato válido, não o de melhor
+    // qualidade — 1080p/8s no Veo 3.1 já custou ~US$3,20 num teste só.
+    // Quem quiser mais qualidade escolhe manualmente.
+    setVideoSize(next === 'openai' ? '720x1280' : '720p')
+    setVideoSeconds(next === 'openai' ? '8' : '4')
+  }
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -1208,9 +1346,10 @@ function AgentEditSheet({
       kind,
       model: model || null,
       temperature: isVideoKind ? 0.3 : temperatureValue,
-      uses_brand_archetype: isVideoKind ? false : usesBrandArchetype,
+      uses_brand_archetype: usesBrandArchetype,
       response_format: isVideoKind ? 'text' : responseFormat,
       output_action: isVideoKind ? 'none' : outputAction,
+      video_provider: isVideoKind ? videoProvider : 'openai',
       video_size: isVideoKind ? videoSize : null,
       video_seconds: isVideoKind ? videoSeconds : null,
       is_active: isActive,
@@ -1318,73 +1457,131 @@ function AgentEditSheet({
           </div>
 
           {isVideoKind ? (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Formato do vídeo</Label>
-                <Select value={videoSize} onValueChange={(value) => setVideoSize(value as VideoSize)}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {VIDEO_SIZE_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Duração</Label>
-                <Select
-                  value={videoSeconds}
-                  onValueChange={(value) => setVideoSeconds(value as VideoSeconds)}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {VIDEO_SECONDS_OPTIONS.map((seconds) => (
-                      <SelectItem key={seconds} value={seconds}>
-                        {seconds}s
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          ) : (
             <>
               <div className="space-y-2">
-                <Label>O que fazer com o resultado</Label>
+                <Label>Provedor de vídeo</Label>
                 <Select
-                  value={outputAction}
-                  onValueChange={(value) => setOutputAction(value as AgentOutputAction)}
+                  value={videoProvider}
+                  onValueChange={(value) => handleProviderChange(value as AgentVideoProvider)}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {AGENT_OUTPUT_ACTIONS.map((action) => (
-                      <SelectItem key={action.value} value={action.value}>
-                        {action.label}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="openai">OpenAI (Sora) — 1 imagem por vídeo</SelectItem>
+                    <SelectItem value="openrouter">
+                      OpenRouter (Veo, Kling, Wan...) — múltiplas imagens
+                    </SelectItem>
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">
+                  Trocar o provedor reseta Modelo/Formato/Duração abaixo — eles são
+                  específicos de cada um.
+                </p>
               </div>
 
-              <label className="flex items-center gap-2 rounded-lg border bg-muted/35 p-3 text-sm">
-                <input
-                  type="checkbox"
-                  checked={usesBrandArchetype}
-                  onChange={(event) => setUsesBrandArchetype(event.target.checked)}
-                  className="size-4 accent-primary"
-                />
-                Usar o arquétipo de marca da empresa como contexto
-              </label>
+              {videoProvider === 'openai' ? (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Formato do vídeo</Label>
+                    <Select
+                      value={videoSize}
+                      onValueChange={(value) => setVideoSize(value as VideoSize)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {VIDEO_SIZE_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Duração</Label>
+                    <Select
+                      value={videoSeconds}
+                      onValueChange={(value) => setVideoSeconds(value as VideoSeconds)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {VIDEO_SECONDS_OPTIONS.map((seconds) => (
+                          <SelectItem key={seconds} value={seconds}>
+                            {seconds}s
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="agent-video-size">Resolução</Label>
+                    <Input
+                      id="agent-video-size"
+                      value={videoSize}
+                      onChange={(event) => setVideoSize(event.target.value)}
+                      placeholder="1080p"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="agent-video-seconds">Duração (segundos)</Label>
+                    <Input
+                      id="agent-video-seconds"
+                      type="number"
+                      min={1}
+                      value={videoSeconds}
+                      onChange={(event) => setVideoSeconds(event.target.value)}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground sm:col-span-2">
+                    Valores válidos dependem do modelo escolhido em "Modelo" nas configurações
+                    avançadas (ex: google/veo-3.1).
+                  </p>
+                </div>
+              )}
             </>
+          ) : (
+            <div className="space-y-2">
+              <Label>O que fazer com o resultado</Label>
+              <Select
+                value={outputAction}
+                onValueChange={(value) => setOutputAction(value as AgentOutputAction)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {AGENT_OUTPUT_ACTIONS.map((action) => (
+                    <SelectItem key={action.value} value={action.value}>
+                      {action.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           )}
+
+          <label className="flex items-center gap-2 rounded-lg border bg-muted/35 p-3 text-sm">
+            <input
+              type="checkbox"
+              checked={usesBrandArchetype}
+              onChange={(event) => setUsesBrandArchetype(event.target.checked)}
+              className="size-4 accent-primary"
+            />
+            Usar o arquétipo de marca da empresa como contexto
+            {isVideoKind ? (
+              <span className="text-xs text-muted-foreground">
+                (entra no prompt de geração do vídeo)
+              </span>
+            ) : null}
+          </label>
 
           <label className="flex items-center gap-2 rounded-lg border bg-muted/35 p-3 text-sm">
             <input
@@ -1430,12 +1627,18 @@ function AgentEditSheet({
             {showAdvanced ? (
               <div className="grid gap-4 border-t p-3 sm:grid-cols-3">
                 <div className="space-y-2">
-                  <Label htmlFor="agent-model">{isVideoKind ? 'Modelo Sora' : 'Modelo'}</Label>
+                  <Label htmlFor="agent-model">Modelo</Label>
                   <Input
                     id="agent-model"
                     value={model}
                     onChange={(event) => setModel(event.target.value)}
-                    placeholder={isVideoKind ? 'sora-2 (padrão)' : 'padrão'}
+                    placeholder={
+                      isVideoKind
+                        ? videoProvider === 'openai'
+                          ? 'sora-2 (padrão)'
+                          : 'google/veo-3.1 (padrão)'
+                        : 'padrão'
+                    }
                   />
                 </div>
                 {!isVideoKind ? (

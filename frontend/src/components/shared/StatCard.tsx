@@ -14,13 +14,13 @@ interface StatCardProps {
 }
 
 const TONES = {
-  teal: 'bg-teal-50 text-teal-700 ring-teal-100 dark:bg-teal-950 dark:text-teal-300 dark:ring-teal-900',
-  blue: 'bg-blue-50 text-blue-700 ring-blue-100 dark:bg-blue-950 dark:text-blue-300 dark:ring-blue-900',
+  teal: 'bg-teal-500 text-white shadow-teal-500/20',
+  blue: 'bg-blue-500 text-white shadow-blue-500/20',
   amber:
-    'bg-amber-50 text-amber-700 ring-amber-100 dark:bg-amber-950 dark:text-amber-300 dark:ring-amber-900',
+    'bg-amber-400 text-slate-950 shadow-amber-400/20',
   violet:
-    'bg-violet-50 text-violet-700 ring-violet-100 dark:bg-violet-950 dark:text-violet-300 dark:ring-violet-900',
-  rose: 'bg-rose-50 text-rose-700 ring-rose-100 dark:bg-rose-950 dark:text-rose-300 dark:ring-rose-900',
+    'bg-violet-500 text-white shadow-violet-500/20',
+  rose: 'bg-rose-500 text-white shadow-rose-500/20',
 }
 
 export function StatCard({
@@ -33,14 +33,20 @@ export function StatCard({
   tone = 'teal',
 }: StatCardProps) {
   return (
-    <Card className={cn('gap-0 border-border/70 py-4 shadow-sm', className)}>
+    <Card
+      className={cn(
+        'relative gap-0 overflow-hidden rounded-2xl border-border/70 bg-card/86 py-4 shadow-sm shadow-slate-950/[0.035] transition hover:-translate-y-0.5 hover:shadow-md',
+        className,
+      )}
+    >
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-foreground/12 to-transparent" />
       <CardContent className="flex items-start justify-between gap-3 px-4">
         <div className="min-w-0">
-          <p className="text-xs font-medium text-muted-foreground">{label}</p>
+          <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">{label}</p>
           {loading ? (
             <Skeleton className="mt-2 h-7 w-24" />
           ) : (
-            <p className="mt-1 truncate text-xl font-semibold tracking-tight" title={value}>
+            <p className="mt-2 truncate text-2xl font-semibold tracking-normal" title={value}>
               {value}
             </p>
           )}
@@ -48,7 +54,7 @@ export function StatCard({
         </div>
         <div
           className={cn(
-            'flex size-9 shrink-0 items-center justify-center rounded-lg ring-1',
+            'flex size-10 shrink-0 items-center justify-center rounded-2xl shadow-lg',
             TONES[tone],
           )}
         >

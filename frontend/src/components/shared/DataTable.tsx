@@ -8,7 +8,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import { ArrowDown, ArrowUp, ArrowUpDown, Search } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, Rows3, Search, StretchHorizontal } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -88,46 +88,48 @@ export function DataTable<TData>({
   return (
     <div className="space-y-3">
       {(searchable || data.length > pageSize) && (
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/70 bg-muted/25 p-2">
           {searchable ? (
-            <div className="relative w-full sm:max-w-xs">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <div className="relative w-full sm:max-w-sm">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={globalFilter}
                 onChange={(event) => setGlobalFilter(event.target.value)}
                 placeholder={searchPlaceholder}
-                className="pl-8"
+                className="h-10 rounded-xl border-border/70 bg-card pl-9 shadow-sm"
               />
             </div>
           ) : (
             <span />
           )}
-          <div className="flex items-center gap-1 rounded-lg border bg-card p-1">
+          <div className="flex items-center gap-1 rounded-xl border border-border/70 bg-card p-1 shadow-sm">
             <Button
               type="button"
               variant={density === 'compact' ? 'secondary' : 'ghost'}
-              size="xs"
+              size="icon-xs"
+              title="Densidade compacta"
               onClick={() => setDensity('compact')}
             >
-              Compacta
+              <Rows3 className="size-3.5" />
             </Button>
             <Button
               type="button"
               variant={density === 'comfortable' ? 'secondary' : 'ghost'}
-              size="xs"
+              size="icon-xs"
+              title="Densidade confortável"
               onClick={() => setDensity('comfortable')}
             >
-              Conforto
+              <StretchHorizontal className="size-3.5" />
             </Button>
           </div>
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-lg border bg-card shadow-sm">
+      <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-sm shadow-slate-950/[0.035]">
         <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id} className="bg-muted/45 hover:bg-muted/45">
+              <TableRow key={headerGroup.id} className="border-border/70 bg-muted/45 hover:bg-muted/45">
                 {headerGroup.headers.map((header) => {
                   const canSort = header.column.getCanSort()
                   const sortDir = header.column.getIsSorted()
@@ -135,7 +137,7 @@ export function DataTable<TData>({
                     <TableHead
                       key={header.id}
                       className={cn(
-                        'sticky top-0 z-[1] h-10 bg-muted/95 text-xs backdrop-blur',
+                        'sticky top-0 z-[1] h-11 bg-muted/88 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground backdrop-blur',
                         canSort && 'cursor-pointer select-none',
                       )}
                       onClick={header.column.getToggleSortingHandler()}
@@ -166,12 +168,18 @@ export function DataTable<TData>({
                 <TableRow
                   key={row.id}
                   onClick={onRowClick ? () => onRowClick(row.original) : undefined}
-                  className={cn(onRowClick && 'cursor-pointer hover:bg-accent/45')}
+                  className={cn(
+                    'border-border/55 hover:bg-muted/35',
+                    onRowClick && 'cursor-pointer',
+                  )}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell
                       key={cell.id}
-                      className={cn(density === 'compact' ? 'px-2 py-1.5' : 'p-2.5')}
+                      className={cn(
+                        'text-[13px]',
+                        density === 'compact' ? 'px-3 py-2' : 'px-3 py-3',
+                      )}
                     >
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
@@ -190,7 +198,7 @@ export function DataTable<TData>({
       </div>
 
       {table.getPageCount() > 1 ? (
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border/70 bg-card/75 px-3 py-2 text-xs text-muted-foreground shadow-sm shadow-slate-950/[0.025]">
           <span>
             Página {table.getState().pagination.pageIndex + 1} de {table.getPageCount()} ·{' '}
             {table.getFilteredRowModel().rows.length} registro(s)

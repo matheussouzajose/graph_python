@@ -297,14 +297,24 @@ export type BrandArchetypeProfileUpdateInput = Omit<
 export type AgentResponseFormat = 'text' | 'json'
 
 // "chat" = pergunta/resposta via LLM (comportamento original). "image_to_video"
-// submete um job de geração de vídeo (OpenAI Sora) a partir de uma imagem —
-// ver app/features/agents/service.py::run. Não editável depois de criado.
+// submete um job de geração de vídeo a partir de uma ou mais imagens — ver
+// app/features/agents/service.py::run. Não editável depois de criado.
 export type AgentKind = 'chat' | 'image_to_video'
 
-// Resoluções aceitas pela Sora (largura x altura) — ver
-// app/features/agents/schemas.py::VideoSize.
-export type VideoSize = '720x1280' | '1280x720' | '1024x1792' | '1792x1024'
-export type VideoSeconds = '4' | '8' | '12'
+// kind="image_to_video" only — qual provedor executa o job (ver
+// app/features/agents/video_providers/). "openai" (Sora) aceita só 1
+// imagem; "openrouter" agrega vários provedores (Veo, Kling, Wan...) e
+// aceita mais, dependendo do modelo escolhido. Não editável depois de
+// criado — o resto da config (model/video_size/video_seconds) é no
+// vocabulário desse provedor.
+export type AgentVideoProvider = 'openai' | 'openrouter'
+
+// Formato e duração ficam em texto livre porque o vocabulário depende do
+// video_provider — Sora usa tamanho exato em pixels ("720x1280") e
+// segundos fixos ("4"|"8"|"12"); OpenRouter usa um rótulo de resolução
+// ("1080p") e duração livre em segundos.
+export type VideoSize = string
+export type VideoSeconds = string
 
 // "none" = resultado é só pra exibir. Outros valores identificam uma ação
 // registrada no backend (app/features/agents/actions.py) que sabe o que
@@ -325,6 +335,7 @@ export interface Agent {
   uses_brand_archetype: boolean
   response_format: AgentResponseFormat
   output_action: AgentOutputAction
+  video_provider: AgentVideoProvider
   video_size: VideoSize | null
   video_seconds: VideoSeconds | null
   is_active: boolean
@@ -345,6 +356,7 @@ export interface AgentCreateInput {
   uses_brand_archetype?: boolean
   response_format?: AgentResponseFormat
   output_action?: AgentOutputAction
+  video_provider?: AgentVideoProvider
   video_size?: VideoSize | null
   video_seconds?: VideoSeconds | null
   is_active?: boolean

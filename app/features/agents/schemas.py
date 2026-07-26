@@ -20,19 +20,15 @@ class AgentKind(StrEnum):
     IMAGE_TO_VIDEO = "image_to_video"
 
 
-class VideoSize(StrEnum):
-    """Sora output resolutions (width x height)."""
+class AgentVideoProvider(StrEnum):
+    """kind="image_to_video" only — which `VideoProvider` (see
+    video_providers/factory.py) executes the job. "openai" (Sora) accepts
+    exactly one reference image; "openrouter" fronts several vendors (Veo,
+    Kling, Wan, ...) and accepts more, depending on the chosen `model`.
+    Immutable after creation — see `AgentUpdate`."""
 
-    PORTRAIT_SMALL = "720x1280"
-    LANDSCAPE_SMALL = "1280x720"
-    PORTRAIT_LARGE = "1024x1792"
-    LANDSCAPE_LARGE = "1792x1024"
-
-
-class VideoSeconds(StrEnum):
-    FOUR = "4"
-    EIGHT = "8"
-    TWELVE = "12"
+    OPENAI = "openai"
+    OPENROUTER = "openrouter"
 
 
 class AgentOutputAction(StrEnum):
@@ -55,8 +51,9 @@ class AgentCreate(BaseModel):
     uses_brand_archetype: bool = False
     response_format: AgentResponseFormat = AgentResponseFormat.TEXT
     output_action: AgentOutputAction = AgentOutputAction.NONE
-    video_size: VideoSize | None = None
-    video_seconds: VideoSeconds | None = None
+    video_provider: AgentVideoProvider = AgentVideoProvider.OPENAI
+    video_size: str | None = Field(default=None, max_length=20)
+    video_seconds: str | None = Field(default=None, max_length=5)
     is_active: bool = True
     # Only company admins may set this true — makes the agent visible/runnable
     # (read-only) by every other company. Enforced in router.py, not here.
@@ -65,8 +62,14 @@ class AgentCreate(BaseModel):
 
 class AgentUpdate(BaseModel):
     """`company_id` and `kind` are intentionally not editable — switching
-    what an agent *is* means deleting and recreating it, same reasoning as
-    `company_id`.
+    what an agent *fundamentally is* means deleting and recreating it.
+    `video_provider` IS editable (unlike an earlier version of this
+    comment claimed): `model`/`video_size`/`video_seconds` are in that
+    provider's own vocabulary and won't automatically carry over when you
+    switch, but that's exactly the kind of mistake (e.g. an OpenRouter
+    model string left behind after switching back to `openai`) this field
+    needs to stay editable to let someone fix, rather than forcing a
+    delete-and-recreate.
     """
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
@@ -78,8 +81,9 @@ class AgentUpdate(BaseModel):
     uses_brand_archetype: bool | None = None
     response_format: AgentResponseFormat | None = None
     output_action: AgentOutputAction | None = None
-    video_size: VideoSize | None = None
-    video_seconds: VideoSeconds | None = None
+    video_provider: AgentVideoProvider | None = None
+    video_size: str | None = Field(default=None, max_length=20)
+    video_seconds: str | None = Field(default=None, max_length=5)
     is_active: bool | None = None
     is_global: bool | None = None
 
@@ -99,6 +103,7 @@ class AgentResponse(BaseModel):
     uses_brand_archetype: bool
     response_format: str
     output_action: str
+    video_provider: str
     video_size: str | None
     video_seconds: str | None
     is_active: bool
@@ -110,9 +115,9 @@ class AgentResponse(BaseModel):
 class AgentRunRequest(BaseModel):
     message: str = Field(min_length=1)
     variables: dict[str, Any] = Field(default_factory=dict)
-    # kind="image_to_video" only — exactly one image URL is expected today
-    # (Sora's `input_reference` takes a single reference image; multiple
-    # images would mean multiple separate video jobs, not supported yet).
+    # kind="image_to_video" only — how many images are accepted depends on
+    # the agent's `video_provider` (Sora: exactly one; OpenRouter: depends
+    # on the underlying model). Validated in the provider adapter, not here.
     image_urls: list[str] = Field(default_factory=list)
 
 
@@ -120,8 +125,9 @@ class AgentRunOutput(BaseModel):
     text: str
     data: dict[str, Any] | None = None
     # Set once a kind="image_to_video" run completes — path to
-    # `GET /agent-runs/{id}/video`, which proxies the bytes from OpenAI
-    # (never a direct OpenAI URL — that requires our server-side API key).
+    # `GET /agent-runs/{id}/video`, which proxies the bytes from whichever
+    # `video_provider` generated it (never a direct vendor URL — that may
+    # require our server-side API key, e.g. Sora's).
     video_url: str | None = None
 
 

@@ -150,6 +150,28 @@ services:
       redis:
         condition: service_healthy
 
+  # Poller dos jobs Sora criados por agentes kind="image_to_video".
+  # A API só submete o job e salva agent_runs.status="running"; este worker
+  # consulta a OpenAI periodicamente e marca a execução como completed/failed.
+  video-worker:
+    image: registry.msouzajose.tech/oraculo-graph-api:${IMAGE_TAG:-latest}
+    pull_policy: always
+    container_name: oraculo-graph-video-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=${DB_PORT:-5432}
+    command: ["python", "-m", "app.features.agents.video_worker"]
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   pgdata:
   redis_data:

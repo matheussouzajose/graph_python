@@ -1,8 +1,7 @@
 import { useState } from 'react'
-import { Loader2, Search, Sparkles } from 'lucide-react'
+import { ArrowRight, Loader2, Search, Sparkles, Target } from 'lucide-react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
-import { PageHeader } from '@/components/shared/PageHeader'
 import { SectionCard } from '@/components/shared/SectionCard'
 import { ProductCombobox } from '@/components/shared/ProductCombobox'
 import { CustomerCombobox } from '@/components/shared/CustomerCombobox'
@@ -14,11 +13,38 @@ import { useRecommendByCustomer, useRecommendByProduct } from '@/hooks/use-actio
 export function RecommendationsPage() {
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Recomendações"
-        description="Gere listas acionáveis a partir do contexto de produto ou do histórico de cliente."
-        icon={Sparkles}
-      />
+      <section className="dark-panel relative overflow-hidden rounded-3xl p-5 sm:p-6">
+        <div className="surface-glow absolute right-8 top-4 h-44 w-44 rounded-full bg-amber-300/18 blur-3xl" />
+        <div className="relative grid gap-5 lg:grid-cols-[1fr_360px] lg:items-center">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs text-amber-100">
+              <Target className="size-3.5" />
+              Máquina de próxima oferta
+            </div>
+            <h2 className="mt-4 max-w-2xl text-3xl font-semibold tracking-normal">
+              Saia de uma entidade e chegue em uma lista pronta para vender.
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-white/55">
+              Escolha produto ou cliente, gere recomendações e use o resultado como insumo para
+              campanha, atendimento ou priorização comercial.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-white/[0.075] p-4">
+            <div className="flex items-center gap-3">
+              <div className="flex size-11 items-center justify-center rounded-2xl bg-amber-300 text-slate-950">
+                <ArrowRight className="size-5" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">Fluxo guiado</p>
+                <p className="text-xs text-white/45">Contexto → recomendação → ação</p>
+              </div>
+            </div>
+            <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10">
+              <div className="progress-breathe h-full w-[74%] rounded-full bg-amber-300" />
+            </div>
+          </div>
+        </div>
+      </section>
 
       <SectionCard title="Central de recomendações" icon={Sparkles}>
         <Tabs defaultValue="product">

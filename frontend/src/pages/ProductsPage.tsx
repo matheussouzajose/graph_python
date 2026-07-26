@@ -1,10 +1,9 @@
 import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Loader2, Search, TrendingUp } from 'lucide-react'
+import { GitBranch, Loader2, Search, Sparkles, TrendingUp } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
-import { PageHeader } from '@/components/shared/PageHeader'
 import { SectionCard } from '@/components/shared/SectionCard'
 import { DataTable } from '@/components/shared/DataTable'
 import { ProductCombobox } from '@/components/shared/ProductCombobox'
@@ -93,11 +92,30 @@ export function ProductsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Produtos"
-        description="Compare desempenho comercial, importância no grafo e oportunidades de cross-sell."
-        icon={TrendingUp}
-      />
+      <section className="dark-panel relative overflow-hidden rounded-3xl p-5 sm:p-6">
+        <div className="surface-glow absolute right-8 top-2 h-44 w-44 rounded-full bg-teal-400/18 blur-3xl" />
+        <div className="absolute -bottom-20 left-1/4 h-44 w-44 rounded-full bg-amber-300/12 blur-3xl" />
+        <div className="relative grid gap-5 lg:grid-cols-[1fr_360px] lg:items-center">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs text-teal-100">
+              <GitBranch className="size-3.5" />
+              Mapa de oportunidades
+            </div>
+            <h2 className="mt-4 max-w-2xl text-3xl font-semibold tracking-normal">
+              Transforme ranking de produto em ação de venda.
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-white/55">
+              Leia faturamento, volume, importância no grafo e produtos comprados juntos como um
+              mapa de cross-sell.
+            </p>
+          </div>
+          <div className="grid gap-3">
+            <ProductSignal label="Produtos vendidos" value={formatNumber(topSelling.data?.length ?? 0)} />
+            <ProductSignal label="Receita ranqueada" value={formatNumber(topRevenue.data?.length ?? 0)} />
+            <ProductSignal label="Associações" value={formatNumber(boughtTogether.data?.length ?? 0)} />
+          </div>
+        </div>
+      </section>
 
       <SectionCard
         title="Faturamento por produto"
@@ -215,6 +233,18 @@ export function ProductsPage() {
           )}
         </div>
       </SectionCard>
+    </div>
+  )
+}
+
+function ProductSignal({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.075] p-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-white/45">{label}</p>
+        <Sparkles className="size-4 text-teal-200" />
+      </div>
+      <p className="mt-1 truncate text-lg font-semibold">{value}</p>
     </div>
   )
 }

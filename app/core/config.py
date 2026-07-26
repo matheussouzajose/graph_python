@@ -58,6 +58,12 @@ class Settings(BaseSettings):
         ),
     )
 
+    # OpenRouter (alternate image-to-video provider — see
+    # app/features/agents/video_providers/openrouter.py). Fronts several
+    # vendors (Veo, Kling, Wan, ...) behind one API, unlike OPENAI_API_KEY
+    # above which only talks to Sora.
+    OPENROUTER_API_KEY: str = Field("", description="API key for OpenRouter (video generation).")
+
     # Database
     DBNAME: str = Field("", description="PostgreSQL database name.")
     DB_USER: str = Field("", description="PostgreSQL user.")

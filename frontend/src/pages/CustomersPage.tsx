@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { Loader2, Package, Search, Users } from 'lucide-react'
+import { HeartPulse, Loader2, Package, Search, Sparkles, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   Sheet,
@@ -19,7 +19,6 @@ import {
 } from '@/components/ui/select'
 import { DataTable } from '@/components/shared/DataTable'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { PageHeader } from '@/components/shared/PageHeader'
 import { SectionCard } from '@/components/shared/SectionCard'
 import { SegmentBadge } from '@/components/shared/SegmentBadge'
 import { RelativeTime } from '@/components/shared/RelativeTime'
@@ -75,11 +74,30 @@ export function CustomersPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Clientes"
-        description="Analise segmentação RFM, concentração de clientes e oportunidades individuais."
-        icon={Users}
-      />
+      <section className="dark-panel relative overflow-hidden rounded-3xl p-5 sm:p-6">
+        <div className="surface-glow absolute right-8 top-4 h-44 w-44 rounded-full bg-violet-400/18 blur-3xl" />
+        <div className="absolute -bottom-20 left-1/4 h-44 w-44 rounded-full bg-teal-300/12 blur-3xl" />
+        <div className="relative grid gap-5 lg:grid-cols-[1fr_360px] lg:items-center">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs text-violet-100">
+              <HeartPulse className="size-3.5" />
+              CRM inteligente
+            </div>
+            <h2 className="mt-4 max-w-2xl text-3xl font-semibold tracking-normal">
+              Priorize quem compra, quem esfriou e quem merece próxima ação.
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-white/55">
+              Segmentos RFM deixam de ser relatório e viram fila de decisão para retenção,
+              reativação e expansão.
+            </p>
+          </div>
+          <div className="grid gap-3">
+            <CustomerSignal label="Segmentos ativos" value={formatNumber(chartData.length)} />
+            <CustomerSignal label="Clientes listados" value={formatNumber(customers.data?.length ?? 0)} />
+            <CustomerSignal label="Filtro atual" value={segment === 'all' ? 'Todos' : getSegmentLabel(segment)} />
+          </div>
+        </div>
+      </section>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <SectionCard
@@ -180,6 +198,18 @@ export function CustomersPage() {
         customerId={selectedCustomerId}
         onOpenChange={(open) => !open && setSelectedCustomerId(null)}
       />
+    </div>
+  )
+}
+
+function CustomerSignal({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.075] p-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-white/45">{label}</p>
+        <Sparkles className="size-4 text-violet-200" />
+      </div>
+      <p className="mt-1 truncate text-lg font-semibold">{value}</p>
     </div>
   )
 }

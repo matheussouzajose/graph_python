@@ -1,12 +1,19 @@
 import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Filter, ReceiptText, RotateCcw, X } from 'lucide-react'
+import { Activity, Filter, MapPin, Package, SlidersHorizontal, User } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import { DataTable } from '@/components/shared/DataTable'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { PageHeader } from '@/components/shared/PageHeader'
+import { FilterBar, type FilterChip } from '@/components/shared/FilterBar'
 import { RelativeTime } from '@/components/shared/RelativeTime'
 import { SectionCard } from '@/components/shared/SectionCard'
 import { useOrderFilters, useOrders } from '@/hooks/use-orders'
@@ -71,9 +78,21 @@ function getProductNames(order: Order) {
 export function OrdersPage() {
   const [filters, setFilters] = useState<OrderFilterParams>({})
   const [offset, setOffset] = useState(0)
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const orders = useOrders(filters, PAGE_SIZE, offset)
   const facets = useOrderFilters(filters)
   const selectedCount = Object.values(filters).reduce((total, values) => total + values.length, 0)
+  const selectedChips = useMemo<FilterChip[]>(
+    () =>
+      Object.entries(filters).flatMap(([key, values]) =>
+        values.map((value) => ({
+          key,
+          value,
+          label: findSelectedLabel(facets.data?.facets, key, value),
+        })),
+      ),
+    [facets.data?.facets, filters],
+  )
 
   const columns = useMemo<ColumnDef<Order, any>[]>(
     () => [
@@ -153,26 +172,45 @@ export function OrdersPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Pedidos"
-        description="Explore pedidos por filtros encadeados de integração, status, origem, localização e produto."
-        icon={ReceiptText}
-      />
+      <section className="dark-panel relative overflow-hidden rounded-3xl p-5 sm:p-6">
+        <div className="surface-glow absolute right-0 top-0 h-40 w-40 rounded-full bg-blue-400/18 blur-3xl" />
+        <div className="relative grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs text-blue-100">
+              <SlidersHorizontal className="size-3.5" />
+              Investigação comercial
+            </div>
+            <h2 className="mt-4 max-w-2xl text-3xl font-semibold tracking-normal">
+              Encontre padrões de compra antes de abrir a planilha.
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-white/55">
+              Combine filtros, navegue por lotes e leia pedidos como sinais de comportamento,
+              região, produto e receita.
+            </p>
+          </div>
+          <div className="grid min-w-72 gap-3 sm:grid-cols-3 lg:grid-cols-1">
+            <OrderSignal label="Encontrados" value={formatNumber(total)} />
+            <OrderSignal label="Nesta página" value={`${formatNumber(pageStart)}-${formatNumber(pageEnd)}`} />
+            <OrderSignal label="Filtros ativos" value={formatNumber(selectedCount)} />
+          </div>
+        </div>
+      </section>
 
       <SectionCard
         title="Filtros de pedidos"
         description="As opções são recalculadas conforme os filtros selecionados."
         icon={Filter}
-        actions={
-          selectedCount > 0 ? (
-            <Button variant="outline" size="sm" onClick={() => { setFilters({}); setOffset(0) }}>
-              <RotateCcw className="size-4" />
-              Limpar filtros
-            </Button>
-          ) : null
-        }
       >
-        <div className="space-y-4">
+        <FilterBar
+          title="Filtro inteligente"
+          description="Combine facetas e mantenha os filtros ativos sempre visíveis."
+          selected={selectedChips}
+          onRemove={(chip) => clearFilter(chip.key, chip.value)}
+          onClear={() => {
+            setFilters({})
+            setOffset(0)
+          }}
+        >
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {(facets.data?.facets ?? []).map((facet) => (
               <FacetPicker
@@ -183,25 +221,7 @@ export function OrdersPage() {
               />
             ))}
           </div>
-
-          {selectedCount > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {Object.entries(filters).flatMap(([key, values]) =>
-                values.map((value) => (
-                  <button
-                    key={`${key}-${value}`}
-                    type="button"
-                    onClick={() => clearFilter(key, value)}
-                    className="inline-flex items-center gap-1 rounded-lg border bg-card px-2 py-1 text-xs"
-                  >
-                    {findSelectedLabel(facets.data?.facets, key, value)}
-                    <X className="size-3" />
-                  </button>
-                )),
-              )}
-            </div>
-          ) : null}
-        </div>
+        </FilterBar>
       </SectionCard>
 
       <SectionCard
@@ -225,6 +245,7 @@ export function OrdersPage() {
               loading={orders.isLoading}
               emptyTitle="Nenhum pedido encontrado"
               getRowId={(row) => row.id}
+              onRowClick={setSelectedOrder}
               searchable
               searchPlaceholder="Buscar nesta página..."
               pageSize={PAGE_SIZE}
@@ -257,6 +278,20 @@ export function OrdersPage() {
           </div>
         )}
       </SectionCard>
+
+      <OrderDetailSheet order={selectedOrder} onClose={() => setSelectedOrder(null)} />
+    </div>
+  )
+}
+
+function OrderSignal({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.075] p-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-white/45">{label}</p>
+        <Activity className="size-4 text-blue-200" />
+      </div>
+      <p className="mt-1 truncate text-lg font-semibold">{value}</p>
     </div>
   )
 }
@@ -332,4 +367,111 @@ function findSelectedLabel(facets: OrderFilterFacet[] | undefined, key: string, 
     ?.find((facet) => facet.key === key)
     ?.options.find((item) => item.value === value)
   return option?.label ?? value
+}
+
+function OrderDetailSheet({ order, onClose }: { order: Order | null; onClose: () => void }) {
+  const products = order?.products ?? []
+
+  return (
+    <Sheet open={Boolean(order)} onOpenChange={(open) => !open && onClose()}>
+      <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-xl">
+        <SheetHeader>
+          <SheetTitle>Pedido #{order?.code ?? order?.external_order_id ?? '—'}</SheetTitle>
+          <SheetDescription>
+            {order?.external_created_at ? <RelativeTime value={order.external_created_at} /> : 'Sem data ERP'}
+          </SheetDescription>
+        </SheetHeader>
+
+        {order ? (
+          <div className="space-y-5 px-4 pb-6">
+            <div className="dark-panel relative overflow-hidden rounded-3xl p-4">
+              <div className="surface-glow absolute right-0 top-0 h-28 w-28 rounded-full bg-blue-400/20 blur-2xl" />
+              <div className="relative grid gap-3 sm:grid-cols-3">
+                <DetailMetric label="Status" value={labelStatus(order.status)} />
+                <DetailMetric label="Total" value={formatCurrency(moneyFromSummary(order.summary))} />
+                <DetailMetric label="Origem" value={textValue(order.origin)} />
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <DetailTile icon={User} label="Cliente" value={getCustomerName(order)} />
+              <DetailTile icon={MapPin} label="Localização" value={`${getCity(order)}/${getState(order)}`} />
+            </div>
+
+            <div className="rounded-2xl border bg-card p-4 shadow-sm">
+              <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold">
+                <Package className="size-4 text-primary" />
+                Produtos do pedido
+              </h3>
+              {products.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nenhum produto encontrado.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {products.map((product, index) => (
+                    <li
+                      key={`${String(product.id ?? product.code ?? index)}`}
+                      className="rounded-xl border bg-muted/25 px-3 py-2"
+                    >
+                      <p className="truncate text-sm font-medium">{textValue(product.name)}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Código {textValue(product.code)}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="rounded-2xl border bg-card p-4 shadow-sm">
+              <h3 className="mb-3 text-sm font-semibold">Dados operacionais</h3>
+              <div className="grid gap-2 text-sm">
+                <KeyValue label="ID externo" value={order.external_order_id} />
+                <KeyValue label="Integração" value={order.integration_id} />
+                <KeyValue label="Atualizado no ERP" value={order.external_updated_at ?? '—'} />
+                <KeyValue label="Observações" value={textValue(order.observations)} />
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </SheetContent>
+    </Sheet>
+  )
+}
+
+function DetailMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.075] p-3">
+      <p className="text-xs text-white/45">{label}</p>
+      <p className="mt-1 truncate text-sm font-semibold">{value}</p>
+    </div>
+  )
+}
+
+function DetailTile({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof User
+  label: string
+  value: string
+}) {
+  return (
+    <div className="rounded-2xl border bg-card p-4 shadow-sm">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Icon className="size-4 text-primary" />
+        {label}
+      </div>
+      <p className="mt-2 truncate text-sm font-semibold">{value}</p>
+    </div>
+  )
+}
+
+function KeyValue({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-3 border-b border-border/60 py-2 last:border-0">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="min-w-0 truncate text-right font-medium">{value}</span>
+    </div>
+  )
 }

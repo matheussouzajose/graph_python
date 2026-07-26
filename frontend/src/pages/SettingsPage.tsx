@@ -48,7 +48,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { PageHeader } from '@/components/shared/PageHeader'
 import { RelativeTime } from '@/components/shared/RelativeTime'
 import { SectionCard } from '@/components/shared/SectionCard'
 import {
@@ -162,11 +161,30 @@ export function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Configurações"
-        description="Gerencie o perfil da empresa e as integrações usadas pela camada autenticada."
-        icon={Building2}
-      />
+      <section className="dark-panel relative overflow-hidden rounded-3xl p-5 sm:p-6">
+        <div className="surface-glow absolute right-8 top-0 h-44 w-44 rounded-full bg-teal-400/18 blur-3xl" />
+        <div className="absolute -bottom-20 left-1/4 h-44 w-44 rounded-full bg-amber-300/12 blur-3xl" />
+        <div className="relative grid gap-5 lg:grid-cols-[1fr_420px] lg:items-center">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs text-teal-100">
+              <PlugZap className="size-3.5" />
+              Central operacional
+            </div>
+            <h2 className="mt-4 max-w-2xl text-3xl font-semibold tracking-normal">
+              Conectores, identidade da empresa e pipeline em uma leitura única.
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-white/55">
+              Configurações deixam de ser tela técnica e viram painel de saúde para dados,
+              integrações e sinais comerciais.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <SettingsSignal label="Empresa" value={company?.is_active ? 'Ativa' : 'Pendente'} />
+            <SettingsSignal label="Integrações" value={String(integrations.data?.length ?? 0)} />
+            <SettingsSignal label="Ativas" value={String(activeIntegrations)} />
+          </div>
+        </div>
+      </section>
 
       <Tabs defaultValue="company">
         <TabsList>
@@ -219,6 +237,18 @@ export function SettingsPage() {
           <BrandArchetypeSettings company={company} companyLoading={companies.isLoading} />
         </TabsContent>
       </Tabs>
+    </div>
+  )
+}
+
+function SettingsSignal({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.075] p-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-white/45">{label}</p>
+        <Database className="size-4 text-teal-200" />
+      </div>
+      <p className="mt-1 truncate text-lg font-semibold">{value}</p>
     </div>
   )
 }

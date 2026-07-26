@@ -163,6 +163,31 @@ services:
       neo4j:
         condition: service_healthy
 
+  video-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: oraculo-graph-api:latest
+    container_name: oraculo-graph-video-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=${DB_PORT:-5432}
+    # Polls Sora video jobs created by image_to_video agents and settles
+    # agent_runs from running to completed/failed.
+    command: ["python", "-m", "app.features.agents.video_worker"]
+    healthcheck:
+      disable: true
+    volumes:
+      - ./app:/app/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   pgdata:
   redis_data:

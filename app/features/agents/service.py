@@ -20,12 +20,12 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
 from app.core.config import settings
-from app.features.agents import video_client
 from app.features.agents.orm import AgentORM
 from app.features.agents.repository import AgentRepository
 from app.features.agents.run_orm import AgentRunORM
 from app.features.agents.run_repository import AgentRunRepository
 from app.features.agents.schemas import AgentCreate, AgentUpdate
+from app.features.agents.video_providers.factory import get_video_provider
 from app.features.brand_archetype.formatting import format_brand_archetype_context
 from app.features.brand_archetype.repository import BrandArchetypeProfileRepository
 from app.features.company.repository import CompanyRepository
@@ -176,13 +176,14 @@ class AgentService:
         message: str,
         image_urls: list[str],
     ) -> AgentRunORM:
-        """Submits a Sora job and returns immediately with `status="running"`
-        — the actual render is polled by `video_worker.py`, not awaited here
-        (it can take minutes, far too long for one HTTP request)."""
-        if len(image_urls) != 1:
-            raise AgentInvalidRunInputError(
-                "Selecione exatamente uma imagem — este agente gera um vídeo por vez."
-            )
+        """Submits a job to `agent.video_provider` and returns immediately
+        with `status="running"` — the actual render is polled by
+        `video_worker.py`, not awaited here (it can take minutes, far too
+        long for one HTTP request). How many images are actually allowed is
+        the provider's call (Sora wants exactly one; OpenRouter varies by
+        model) — see `video_providers/*.py`, not validated here."""
+        if not image_urls:
+            raise AgentInvalidRunInputError("Selecione ao menos uma imagem.")
 
         run = await self._run_repository.create(
             agent_id=agent.id,
@@ -191,15 +192,23 @@ class AgentService:
         )
 
         prompt_parts = [part.strip() for part in (agent.system_prompt, message) if part.strip()]
+        if agent.uses_brand_archetype:
+            profile = await self._brand_archetype_repository.get_by_company_id(
+                requesting_company_id
+            )
+            if profile is not None:
+                context = format_brand_archetype_context(profile)
+                prompt_parts.append(f"Contexto de marca:\n{context}")
         prompt = "\n\n".join(prompt_parts)
 
         try:
-            video_id = await video_client.submit_video_job(
+            provider = get_video_provider(agent.video_provider)
+            video_id = await provider.submit_video_job(
                 prompt=prompt,
-                image_url=image_urls[0],
-                model=agent.model or video_client.DEFAULT_VIDEO_MODEL,
-                size=agent.video_size or video_client.DEFAULT_VIDEO_SIZE,
-                seconds=agent.video_seconds or video_client.DEFAULT_VIDEO_SECONDS,
+                image_urls=image_urls,
+                model=agent.model,
+                size=agent.video_size,
+                seconds=agent.video_seconds,
             )
         except Exception as exc:
             return await self._run_repository.mark_failed(run, str(exc))
@@ -207,14 +216,19 @@ class AgentService:
         return await self._run_repository.mark_running(run, video_id)
 
     async def check_video_job(self, run: AgentRunORM) -> AgentRunORM:
-        """Polls Sora for one running video job and settles the run if it's
-        done — called by `video_worker.py`, never from a request handler."""
+        """Polls one running video job and settles the run if it's done —
+        called by `video_worker.py`, never from a request handler."""
         if run.external_job_id is None:
             return run
 
-        video = await video_client.get_video_status(run.external_job_id)
+        agent = await self._repository.get(run.agent_id)
+        if agent is None:
+            return run
 
-        if video.status == "completed":
+        provider = get_video_provider(agent.video_provider)
+        job_status = await provider.get_video_status(run.external_job_id)
+
+        if job_status.status == "completed":
             output = {
                 "text": run.input.get("message") or "",
                 "data": None,
@@ -222,16 +236,23 @@ class AgentService:
             }
             return await self._run_repository.mark_completed(run, output)
 
-        if video.status == "failed":
-            error_message = getattr(video, "error", None) or "Falha na geração do vídeo"
-            return await self._run_repository.mark_failed(run, str(error_message))
+        if job_status.status == "failed":
+            return await self._run_repository.mark_failed(
+                run, job_status.error or "Falha na geração do vídeo"
+            )
 
         return run
 
     async def get_video_content(self, run: AgentRunORM) -> bytes:
         if run.status != "completed" or run.external_job_id is None:
             raise AgentVideoNotAvailableError
-        return await video_client.download_video_bytes(run.external_job_id)
+
+        agent = await self._repository.get(run.agent_id)
+        if agent is None:
+            raise AgentVideoNotAvailableError
+
+        provider = get_video_provider(agent.video_provider)
+        return await provider.download_video_bytes(run.external_job_id)
 
     async def run_stream(
         self,

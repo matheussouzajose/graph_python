@@ -47,12 +47,24 @@ class AgentORM(Base):
     # to Sora as the video prompt.
     system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
     # Falls back to `settings.OPENAI_CHAT_MODEL` at run time when null and
-    # kind="chat"; for kind="image_to_video", the Sora model ("sora-2" |
-    # "sora-2-pro"), falls back to "sora-2".
+    # kind="chat". For kind="image_to_video", the model name in whatever
+    # vocabulary `video_provider` uses (Sora: "sora-2"/"sora-2-pro";
+    # OpenRouter: "google/veo-3.1", "kwaivgi/kling-v3.0", ...).
     model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     temperature: Mapped[float] = mapped_column(Float, nullable=False, default=0.3)
-    # kind="image_to_video" only — see `VideoSize`/`VideoSeconds` in
-    # schemas.py. Null falls back to a portrait default at run time.
+    # kind="image_to_video" only. "openai" (Sora, one reference image, no
+    # deploy needed elsewhere in the codebase) or "openrouter" (fronts
+    # several vendors — Veo, Kling, Wan — supports multiple reference
+    # images depending on the chosen `model`). See
+    # `video_providers/factory.py`. Immutable after creation, same
+    # reasoning as `kind`: the rest of this agent's config
+    # (`model`/`video_size`/`video_seconds`) is in that provider's
+    # vocabulary and wouldn't carry over to a different one.
+    video_provider: Mapped[str] = mapped_column(String(20), nullable=False, default="openai")
+    # kind="image_to_video" only, in whatever vocabulary `video_provider`
+    # uses (Sora: exact pixel size e.g. "720x1280"; OpenRouter: a
+    # resolution label e.g. "1080p"). Null falls back to the provider's own
+    # default at run time — see `video_providers/*.py`.
     video_size: Mapped[str | None] = mapped_column(String(20), nullable=True)
     video_seconds: Mapped[str | None] = mapped_column(String(5), nullable=True)
     # When true, the company's brand_archetype_profile (if any) is rendered

@@ -38,8 +38,9 @@ class AgentRepository:
             uses_brand_archetype=data.uses_brand_archetype,
             response_format=data.response_format.value,
             output_action=data.output_action.value,
-            video_size=data.video_size.value if data.video_size else None,
-            video_seconds=data.video_seconds.value if data.video_seconds else None,
+            video_provider=data.video_provider.value,
+            video_size=data.video_size,
+            video_seconds=data.video_seconds,
             is_active=data.is_active,
             is_global=data.is_global,
         )

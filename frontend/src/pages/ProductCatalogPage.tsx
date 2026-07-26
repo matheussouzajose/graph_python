@@ -33,10 +33,11 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { PageHeader } from '@/components/shared/PageHeader'
+import { FilterBar, type FilterChip } from '@/components/shared/FilterBar'
 import { RelativeTime } from '@/components/shared/RelativeTime'
 import { useProducts } from '@/hooks/use-products'
 import { formatCurrency, formatNumber } from '@/lib/format'
+import { productImages, stringValue } from '@/lib/product-images'
 import type { Product } from '@/types/api'
 
 const PAGE_SIZE_OPTIONS = [24, 48, 96] as const
@@ -63,6 +64,20 @@ export function ProductCatalogPage() {
     const promoCount = items.filter((product) => product.promotion).length
     return { activeCount, stockCount, promoCount }
   }, [items])
+  const selectedFilters = useMemo<FilterChip[]>(() => {
+    const chips: FilterChip[] = []
+    if (search.trim()) {
+      chips.push({ key: 'search', value: search, label: `Busca: ${search}` })
+    }
+    if (activeFilter !== 'all') {
+      chips.push({
+        key: 'active',
+        value: activeFilter,
+        label: activeFilter === 'active' ? 'Somente ativos' : 'Somente inativos',
+      })
+    }
+    return chips
+  }, [activeFilter, search])
 
   useEffect(() => {
     if (!products.data || page <= totalPages) return
@@ -84,15 +99,44 @@ export function ProductCatalogPage() {
     setPage(1)
   }
 
+  function removeFilter(chip: FilterChip) {
+    if (chip.key === 'search') updateSearch('')
+    if (chip.key === 'active') updateActiveFilter('all')
+  }
+
+  function clearFilters() {
+    updateSearch('')
+    updateActiveFilter('all')
+  }
+
   return (
     <div className="space-y-5">
-      <PageHeader
-        title="Catálogo ERP"
-        description="Produtos sincronizados diretamente do ERP Vesti, separados das análises de vendas."
-        icon={Package}
-      />
+      <section className="dark-panel relative overflow-hidden rounded-3xl p-5 sm:p-6">
+        <div className="surface-glow absolute right-8 top-0 h-44 w-44 rounded-full bg-blue-400/18 blur-3xl" />
+        <div className="absolute -bottom-20 left-1/4 h-44 w-44 rounded-full bg-teal-300/12 blur-3xl" />
+        <div className="relative grid gap-5 lg:grid-cols-[1fr_420px] lg:items-center">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs text-blue-100">
+              <Boxes className="size-3.5" />
+              Catálogo operacional
+            </div>
+            <h2 className="mt-4 max-w-2xl text-3xl font-semibold tracking-normal">
+              Veja o produto como ele chega da integração, com status e estoque.
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-white/55">
+              Use o catálogo para auditar imagens, SKUs, promoções e disponibilidade antes de
+              cruzar com dados comerciais.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <CatalogSignal label="Produtos" value={formatNumber(total)} />
+            <CatalogSignal label="Ativos" value={formatNumber(summary.activeCount)} />
+            <CatalogSignal label="Estoque" value={formatNumber(summary.stockCount)} />
+          </div>
+        </div>
+      </section>
 
-      <div className="space-y-4 rounded-xl border bg-card p-4 shadow-sm">
+      <div className="glass-panel space-y-4 rounded-3xl p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="flex items-center gap-2 text-sm font-semibold">
@@ -111,7 +155,14 @@ export function ProductCatalogPage() {
           </div>
         </div>
 
-        <div className="grid gap-3 xl:grid-cols-[minmax(280px,1fr)_auto_auto]">
+        <FilterBar
+          title="Explorar catálogo"
+          description="Busque produtos e mantenha o status aplicado visível."
+          selected={selectedFilters}
+          onRemove={removeFilter}
+          onClear={clearFilters}
+        >
+        <div className="grid w-full gap-3 xl:grid-cols-[minmax(280px,1fr)_auto_auto]">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -155,6 +206,7 @@ export function ProductCatalogPage() {
             </SelectContent>
           </Select>
         </div>
+        </FilterBar>
 
         <div className="grid gap-3 sm:grid-cols-3">
           <CatalogMetric label="Ativos nesta página" value={formatNumber(summary.activeCount)} />
@@ -214,6 +266,18 @@ function CatalogMetric({ label, value }: { label: string; value: string }) {
     <div className="rounded-lg border bg-muted/25 px-3 py-2">
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mt-0.5 text-sm font-semibold">{value}</p>
+    </div>
+  )
+}
+
+function CatalogSignal({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.075] p-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-white/45">{label}</p>
+        <Package className="size-4 text-blue-200" />
+      </div>
+      <p className="mt-1 truncate text-lg font-semibold">{value}</p>
     </div>
   )
 }
@@ -672,45 +736,6 @@ function categoryNames(categories: Record<string, unknown>[]): string[] {
     }
   }
   return names
-}
-
-type ProductImage = {
-  url: string
-  fallback: string | null
-}
-
-function productImages(product: Product): ProductImage[] {
-  const images: ProductImage[] = []
-  for (const item of product.media) {
-    const normal = objectValue(item.normal)
-    const zoom = objectValue(item.zoom)
-    const url = stringValue(zoom.url) ?? stringValue(normal.url)
-    const fallback = stringValue(zoom.fallback) ?? stringValue(normal.fallback)
-    if (url) images.push({ url, fallback })
-  }
-  if (!images.length && product.image_url) {
-    images.push({ url: product.image_url, fallback: product.image_fallback_url })
-  }
-  return dedupeImages(images)
-}
-
-function dedupeImages(images: ProductImage[]): ProductImage[] {
-  const seen = new Set<string>()
-  return images.filter((image) => {
-    if (seen.has(image.url)) return false
-    seen.add(image.url)
-    return true
-  })
-}
-
-function objectValue(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {}
-}
-
-function stringValue(value: unknown): string | null {
-  return typeof value === 'string' && value ? value : null
 }
 
 function colorName(product: Product, colorId: unknown): string {
