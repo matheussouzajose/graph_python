@@ -31,6 +31,7 @@ class AgentORM(Base):
         nullable=False,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    category: Mapped[str | None] = mapped_column(String(100), nullable=True)
     description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     # "chat" | "image_to_video" — see `AgentKind` in schemas.py. Unlike
     # `system_prompt` (data), this genuinely changes *how* the agent

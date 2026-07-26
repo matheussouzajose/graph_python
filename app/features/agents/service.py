@@ -87,9 +87,15 @@ class AgentService:
     async def get_visible_to_company(self, agent_id: UUID, company_id: UUID) -> AgentORM | None:
         return await self._repository.get_visible_to_company(agent_id, company_id)
 
-    async def list(self, company_id: UUID, limit: int = 100, offset: int = 0) -> Sequence[AgentORM]:
+    async def list(
+        self,
+        company_id: UUID,
+        limit: int = 100,
+        offset: int = 0,
+        category: str | None = None,
+    ) -> Sequence[AgentORM]:
         return await self._repository.list_visible_to_company(
-            company_id, limit=limit, offset=offset
+            company_id, limit=limit, offset=offset, category=category
         )
 
     async def update(self, agent_id: UUID, data: AgentUpdate) -> AgentORM | None:

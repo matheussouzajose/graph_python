@@ -75,9 +75,15 @@ async def create_agent(
 
 @router.get("", response_model=list[AgentResponse])
 async def list_agents(
-    service: ServiceDep, current_user: CurrentUserDep, limit: int = 100, offset: int = 0
+    service: ServiceDep,
+    current_user: CurrentUserDep,
+    limit: int = 100,
+    offset: int = 0,
+    category: str | None = None,
 ) -> list[AgentResponse]:
-    agents = await service.list(current_user.company_id, limit=limit, offset=offset)
+    agents = await service.list(
+        current_user.company_id, limit=limit, offset=offset, category=category
+    )
     return [AgentResponse.model_validate(agent) for agent in agents]
 
 

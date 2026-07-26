@@ -42,6 +42,7 @@ class AgentOutputAction(StrEnum):
 class AgentCreate(BaseModel):
     company_id: UUID
     name: str = Field(min_length=1, max_length=255)
+    category: str | None = Field(default=None, max_length=100)
     description: str | None = Field(default=None, max_length=1000)
     kind: AgentKind = AgentKind.CHAT
     usage_instructions: str | None = None
@@ -73,6 +74,7 @@ class AgentUpdate(BaseModel):
     """
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
+    category: str | None = Field(default=None, max_length=100)
     description: str | None = Field(default=None, max_length=1000)
     usage_instructions: str | None = None
     system_prompt: str | None = Field(default=None, min_length=1)
@@ -94,6 +96,7 @@ class AgentResponse(BaseModel):
     id: UUID
     company_id: UUID
     name: str
+    category: str | None
     description: str | None
     kind: str
     usage_instructions: str | None

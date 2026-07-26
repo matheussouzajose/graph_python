@@ -326,6 +326,7 @@ export interface Agent {
   id: string
   company_id: string
   name: string
+  category: string | null
   description: string | null
   kind: AgentKind
   usage_instructions: string | null
@@ -347,6 +348,7 @@ export interface Agent {
 export interface AgentCreateInput {
   company_id: string
   name: string
+  category?: string | null
   description?: string | null
   kind?: AgentKind
   usage_instructions?: string | null

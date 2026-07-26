@@ -29,6 +29,7 @@ class AgentRepository:
         agent = AgentORM(
             company_id=data.company_id,
             name=data.name,
+            category=data.category,
             description=data.description,
             kind=data.kind.value,
             usage_instructions=data.usage_instructions,
@@ -64,15 +65,20 @@ class AgentRepository:
         return await self._session.scalar(stmt)
 
     async def list_visible_to_company(
-        self, company_id: UUID, limit: int = 100, offset: int = 0
+        self,
+        company_id: UUID,
+        limit: int = 100,
+        offset: int = 0,
+        category: str | None = None,
     ) -> Sequence[AgentORM]:
         stmt = (
             select(AgentORM)
             .where(or_(AgentORM.company_id == company_id, AgentORM.is_global.is_(True)))
             .order_by(AgentORM.created_at.desc())
-            .limit(limit)
-            .offset(offset)
         )
+        if category is not None:
+            stmt = stmt.where(AgentORM.category == category)
+        stmt = stmt.limit(limit).offset(offset)
         return (await self._session.scalars(stmt)).all()
 
     async def update(self, agent_id: UUID, data: AgentUpdate) -> AgentORM | None:

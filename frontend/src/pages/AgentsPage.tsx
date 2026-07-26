@@ -90,6 +90,7 @@ import type {
 } from '@/types/api'
 
 const AGENTS_PER_PAGE = 9
+const UNCATEGORIZED_CATEGORY = '__uncategorized'
 
 const VIDEO_SIZE_OPTIONS: { value: VideoSize; label: string }[] = [
   { value: '720x1280', label: 'Retrato pequeno (720x1280)' },
@@ -231,6 +232,17 @@ function AgentLibrary({
   const [scope, setScope] = useState<AgentScopeFilter>('all')
   const [kind, setKind] = useState<AgentKindFilter>('all')
   const [status, setStatus] = useState<AgentStatusFilter>('all')
+  const [category, setCategory] = useState('all')
+
+  const categoryOptions = useMemo(() => {
+    return Array.from(
+      new Set(
+        agents
+          .map((agent) => agent.category?.trim())
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ).sort((a, b) => a.localeCompare(b, 'pt-BR'))
+  }, [agents])
 
   const filteredAgents = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase()
@@ -240,12 +252,24 @@ function AgentLibrary({
       if (kind !== 'all' && agent.kind !== kind) return false
       if (status === 'active' && !agent.is_active) return false
       if (status === 'inactive' && agent.is_active) return false
+      if (category === UNCATEGORIZED_CATEGORY && agent.category) return false
+      if (
+        category !== 'all' &&
+        category !== UNCATEGORIZED_CATEGORY &&
+        agent.category !== category
+      ) return false
       if (!normalized) return true
-      return [agent.name, agent.description, agent.usage_instructions, agent.system_prompt]
+      return [
+        agent.name,
+        agent.category,
+        agent.description,
+        agent.usage_instructions,
+        agent.system_prompt,
+      ]
         .filter(Boolean)
         .some((value) => value?.toLocaleLowerCase().includes(normalized))
     })
-  }, [agents, kind, myCompanyId, query, scope, status])
+  }, [agents, category, kind, myCompanyId, query, scope, status])
 
   const totalPages = Math.max(1, Math.ceil(filteredAgents.length / AGENTS_PER_PAGE))
   const currentPage = Math.min(page, totalPages)
@@ -256,7 +280,7 @@ function AgentLibrary({
 
   useEffect(() => {
     setPage(1)
-  }, [query, agents.length, scope, kind, status])
+  }, [query, agents.length, scope, kind, status, category])
 
   const ownedCount = agents.filter((agent) => agent.company_id === myCompanyId).length
   const globalCount = agents.filter((agent) => agent.is_global).length
@@ -322,6 +346,21 @@ function AgentLibrary({
         <SegmentButton active={status === 'all'} onClick={() => setStatus('all')}>Qualquer status</SegmentButton>
         <SegmentButton active={status === 'active'} onClick={() => setStatus('active')}>Ativos</SegmentButton>
         <SegmentButton active={status === 'inactive'} onClick={() => setStatus('inactive')}>Inativos</SegmentButton>
+        <span className="mx-1 hidden h-7 w-px bg-border sm:block" />
+        <Select value={category} onValueChange={setCategory}>
+          <SelectTrigger className="h-9 w-full rounded-xl sm:w-[210px]">
+            <SelectValue placeholder="Categoria" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todas as categorias</SelectItem>
+            <SelectItem value={UNCATEGORIZED_CATEGORY}>Sem categoria</SelectItem>
+            {categoryOptions.map((option) => (
+              <SelectItem key={option} value={option}>
+                {option}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       </div>
 
@@ -339,6 +378,7 @@ function AgentLibrary({
                   setScope('all')
                   setKind('all')
                   setStatus('all')
+                  setCategory('all')
                 }}
               >
                 Limpar filtros
@@ -476,6 +516,7 @@ function AgentCard({
           {agent.is_active ? 'Ativo' : 'Inativo'}
         </Badge>
         <Badge variant="outline">{mine ? 'Seu agente' : 'Compartilhado'}</Badge>
+        {agent.category ? <Badge variant="outline">{agent.category}</Badge> : null}
         {agent.kind === 'image_to_video' ? (
           <Badge variant="outline">
             <Video className="size-3" />
@@ -696,6 +737,14 @@ function AgentWorkspace({
                   </Badge>
                 ) : null}
                 {!agent.is_active ? <Badge variant="outline">Inativo</Badge> : null}
+                {agent.category ? (
+                  <Badge
+                    variant="outline"
+                    className="border-white/10 bg-white/[0.08] text-white"
+                  >
+                    {agent.category}
+                  </Badge>
+                ) : null}
               </div>
               {agent.description ? (
                 <p className="mt-1 max-w-2xl text-sm leading-6 text-white/58">{agent.description}</p>
@@ -1517,6 +1566,7 @@ function AgentEditSheet({
   const updateAgent = useUpdateAgent()
 
   const [name, setName] = useState('')
+  const [category, setCategory] = useState('')
   const [description, setDescription] = useState('')
   const [kind, setKind] = useState<AgentKind>('chat')
   const [usageInstructions, setUsageInstructions] = useState('')
@@ -1536,6 +1586,7 @@ function AgentEditSheet({
   useEffect(() => {
     if (!open) return
     setName(agent?.name ?? '')
+    setCategory(agent?.category ?? '')
     setDescription(agent?.description ?? '')
     setKind(agent?.kind ?? 'chat')
     setUsageInstructions(agent?.usage_instructions ?? '')
@@ -1579,6 +1630,7 @@ function AgentEditSheet({
     }
     const payload = {
       name,
+      category: category.trim() || null,
       description: description || null,
       usage_instructions: usageInstructions || null,
       system_prompt: systemPrompt,
@@ -1648,6 +1700,17 @@ function AgentEditSheet({
               onChange={(event) => setName(event.target.value)}
               placeholder="ex: Gerador de arquétipo de marca"
               required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="agent-category">Categoria</Label>
+            <Input
+              id="agent-category"
+              value={category}
+              onChange={(event) => setCategory(event.target.value)}
+              placeholder="ex: Marketing, Conteúdo, Vídeo"
+              maxLength={100}
             />
           </div>
 
