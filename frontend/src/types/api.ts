@@ -93,6 +93,14 @@ export interface IntegrationSyncStatus {
   status: string
   last_synced_at: string | null
   synced_until: string | null
+  resource_statuses: IntegrationResourceSyncStatus[]
+}
+
+export interface IntegrationResourceSyncStatus {
+  resource: string
+  status: string
+  last_synced_at: string | null
+  synced_until: string | null
 }
 
 export interface AlgorithmRunStatus {
@@ -153,12 +161,67 @@ export interface Integration {
   updated_at: string
 }
 
+export interface IntegrationCreateInput {
+  company_id: string
+  provider: 'vesti'
+  name: string
+  base_url: string
+  configs: Record<string, unknown>
+  params: Record<string, unknown>
+  is_active?: boolean
+}
+
 export interface IntegrationUpdateInput {
   name?: string
   base_url?: string
   configs?: Record<string, unknown>
   params?: Record<string, unknown>
   is_active?: boolean
+}
+
+export interface Product {
+  id: string
+  integration_id: string
+  external_product_id: string
+  external_company_id: string
+  integration_product_id: string | null
+  code: string | null
+  name: string | null
+  description: string | null
+  full_description: string | null
+  composition: string | null
+  active: boolean
+  price: number | null
+  promotion: boolean
+  price_promotional: number | null
+  slug: string | null
+  url: string | null
+  weight: number | null
+  height: number | null
+  width: number | null
+  length: number | null
+  external_created_at: string | null
+  external_updated_at: string | null
+  release_at: string | null
+  order_date: string | null
+  brand: Record<string, unknown>
+  categories: Record<string, unknown>[]
+  negotiations: Record<string, unknown>[]
+  sizes: Record<string, unknown>[]
+  colors: Record<string, unknown>[]
+  stocks: Record<string, unknown>[]
+  media: Record<string, unknown>[]
+  image_url: string | null
+  image_fallback_url: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ProductListResponse {
+  items: Product[]
+  total: number
+  limit: number
+  offset: number
 }
 
 // Um dos 12 arquétipos junguianos de marca (ver docs/arquetipos-de-marca.md
@@ -230,6 +293,112 @@ export type BrandArchetypeProfileUpdateInput = Omit<
   BrandArchetypeProfileCreateInput,
   'company_id'
 >
+
+export type AgentResponseFormat = 'text' | 'json'
+
+// "chat" = pergunta/resposta via LLM (comportamento original). "image_to_video"
+// submete um job de geração de vídeo (OpenAI Sora) a partir de uma imagem —
+// ver app/features/agents/service.py::run. Não editável depois de criado.
+export type AgentKind = 'chat' | 'image_to_video'
+
+// Resoluções aceitas pela Sora (largura x altura) — ver
+// app/features/agents/schemas.py::VideoSize.
+export type VideoSize = '720x1280' | '1280x720' | '1024x1792' | '1792x1024'
+export type VideoSeconds = '4' | '8' | '12'
+
+// "none" = resultado é só pra exibir. Outros valores identificam uma ação
+// registrada no backend (app/features/agents/actions.py) que sabe o que
+// fazer com o resultado estruturado de uma execução — ver
+// AGENT_OUTPUT_ACTIONS em lib/agent-actions.ts para os rótulos.
+export type AgentOutputAction = 'none' | 'apply_brand_archetype'
+
+export interface Agent {
+  id: string
+  company_id: string
+  name: string
+  description: string | null
+  kind: AgentKind
+  usage_instructions: string | null
+  system_prompt: string
+  model: string | null
+  temperature: number
+  uses_brand_archetype: boolean
+  response_format: AgentResponseFormat
+  output_action: AgentOutputAction
+  video_size: VideoSize | null
+  video_seconds: VideoSeconds | null
+  is_active: boolean
+  is_global: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface AgentCreateInput {
+  company_id: string
+  name: string
+  description?: string | null
+  kind?: AgentKind
+  usage_instructions?: string | null
+  system_prompt: string
+  model?: string | null
+  temperature?: number
+  uses_brand_archetype?: boolean
+  response_format?: AgentResponseFormat
+  output_action?: AgentOutputAction
+  video_size?: VideoSize | null
+  video_seconds?: VideoSeconds | null
+  is_active?: boolean
+  is_global?: boolean
+}
+
+export type AgentUpdateInput = Partial<Omit<AgentCreateInput, 'company_id' | 'kind'>>
+
+export interface AgentRunOutput {
+  text: string
+  data: Record<string, unknown> | null
+  // Set once a kind="image_to_video" run completes — a relative API path
+  // (`/agent-runs/{id}/video`) that must be fetched with an Authorization
+  // header (never used directly as a plain <video src>), see
+  // `fetchAgentRunVideo` in lib/api.ts.
+  video_url: string | null
+}
+
+export interface AgentRunInput {
+  message: string
+  variables: Record<string, unknown>
+  image_urls?: string[]
+}
+
+export interface AgentRun {
+  id: string
+  agent_id: string
+  company_id: string
+  input: AgentRunInput
+  output: AgentRunOutput | null
+  status: 'pending' | 'running' | 'completed' | 'failed' | string
+  error: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AgentRunRequestInput {
+  message: string
+  variables?: Record<string, unknown>
+  image_urls?: string[]
+}
+
+// Eventos do SSE de POST /agents/{id}/run/stream (ver app/features/agents/router.py).
+export interface AgentStreamEvent {
+  type: 'token' | 'error' | 'done'
+  text?: string
+  message?: string
+  run?: AgentRun
+}
+
+export interface AgentRunApplyResponse {
+  action: string
+  result: Record<string, unknown>
+}
 
 export interface Order {
   id: string

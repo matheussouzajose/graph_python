@@ -17,7 +17,7 @@ import logging
 
 from app.core.infrastructure.database.session import AsyncSessionFactory
 from app.features.integration.repository import IntegrationRepository
-from app.features.order.sync_engine import run_order_sync
+from app.features.integration.sync_resources import run_enabled_resource_syncs
 
 logger = logging.getLogger(__name__)
 
@@ -46,13 +46,17 @@ class OrderSyncWorker:
 
         for integration in integrations:
             try:
-                result = await run_order_sync(integration.id, page_size=self._page_size)
-                logger.info(
-                    "Synced integration %s: %d page(s), %d order(s)",
-                    integration.id,
-                    result.pages_processed,
-                    result.orders_upserted,
+                results = await run_enabled_resource_syncs(
+                    integration.id, integration.params, page_size=self._page_size
                 )
+                for result in results:
+                    logger.info(
+                        "Synced integration %s/%s: %d page(s), %d record(s)",
+                        integration.id,
+                        result.resource,
+                        result.pages_processed,
+                        result.records_upserted,
+                    )
             except Exception:
                 logger.exception("Failed syncing integration %s", integration.id)
 

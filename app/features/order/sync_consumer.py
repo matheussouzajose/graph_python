@@ -19,6 +19,7 @@ import asyncio
 import logging
 from uuid import UUID
 
+from app.core.infrastructure.database.session import AsyncSessionFactory
 from app.core.infrastructure.messaging.base import Event
 from app.core.infrastructure.messaging.client import get_redis_client
 from app.core.infrastructure.messaging.events import (
@@ -26,7 +27,8 @@ from app.core.infrastructure.messaging.events import (
     INTEGRATION_SYNC_REQUESTED,
 )
 from app.core.infrastructure.messaging.redis_stream import RedisStreamConsumer
-from app.features.order.sync_engine import run_order_sync
+from app.features.integration.repository import IntegrationRepository
+from app.features.integration.sync_resources import run_enabled_resource_syncs
 
 logger = logging.getLogger(__name__)
 
@@ -39,13 +41,18 @@ class OrderSyncEventHandler:
             return
         try:
             integration_id = UUID(event.payload["integration_id"])
-            result = await run_order_sync(integration_id)
-            logger.info(
-                "Synced integration %s: %d page(s), %d order(s)",
-                integration_id,
-                result.pages_processed,
-                result.orders_upserted,
-            )
+            async with AsyncSessionFactory() as session:
+                integration = await IntegrationRepository(session).get(integration_id)
+                params = integration.params if integration else {}
+            results = await run_enabled_resource_syncs(integration_id, params)
+            for result in results:
+                logger.info(
+                    "Synced integration %s/%s: %d page(s), %d record(s)",
+                    integration_id,
+                    result.resource,
+                    result.pages_processed,
+                    result.records_upserted,
+                )
         except Exception:
             logger.exception("Failed processing sync-requested event: %s", event.payload)
 

@@ -17,6 +17,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.infrastructure.database.base import Base
 
 RESOURCE_ORDERS = "orders"
+RESOURCE_PRODUCTS = "products"
 
 
 class IntegrationSyncStateORM(Base):

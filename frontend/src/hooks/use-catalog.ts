@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
+  createIntegration,
   createBrandArchetypeProfile,
   deleteBrandArchetypeProfile,
   deleteIntegration,
@@ -13,6 +14,7 @@ import {
 import type {
   BrandArchetypeProfileCreateInput,
   BrandArchetypeProfileUpdateInput,
+  IntegrationCreateInput,
   IntegrationUpdateInput,
 } from '@/types/api'
 
@@ -28,6 +30,19 @@ export function useCompanies() {
 
 export function useIntegrations() {
   return useQuery({ queryKey: catalogKeys.integrations, queryFn: getIntegrations })
+}
+
+export function useCreateIntegration() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (data: IntegrationCreateInput) => createIntegration(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: catalogKeys.integrations })
+      toast.success('Integração criada')
+    },
+    onError: (error: Error) =>
+      toast.error('Falha ao criar integração', { description: error.message }),
+  })
 }
 
 export function useUpdateIntegration() {

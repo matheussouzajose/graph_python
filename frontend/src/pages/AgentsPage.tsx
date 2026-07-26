@@ -1,0 +1,1493 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { FormEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import {
+  ArrowLeft,
+  Bot,
+  CheckCircle2,
+  ChevronDown,
+  Clock,
+  Copy,
+  Globe,
+  ImageIcon,
+  Info,
+  Loader2,
+  Pencil,
+  Play,
+  Plus,
+  Search,
+  Sparkles,
+  Square,
+  Trash2,
+  Video,
+  Wand2,
+  X,
+  XCircle,
+} from 'lucide-react'
+import { toast } from 'sonner'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
+import { Textarea } from '@/components/ui/textarea'
+import { EmptyState } from '@/components/shared/EmptyState'
+import { PageHeader } from '@/components/shared/PageHeader'
+import { RelativeTime } from '@/components/shared/RelativeTime'
+import {
+  agentKeys,
+  useAgentRuns,
+  useAgents,
+  useApplyAgentRun,
+  useCreateAgent,
+  useDeleteAgent,
+  usePollAgentRun,
+  useRunAgentOnce,
+  useUpdateAgent,
+  useUpdateAgentRunOutput,
+} from '@/hooks/use-agents'
+import { useAgentRunStream } from '@/hooks/use-agent-run-stream'
+import { useProducts } from '@/hooks/use-products'
+import { useAuthUser } from '@/lib/auth-kit-core'
+import { AGENT_OUTPUT_ACTIONS, AGENT_OUTPUT_ACTION_APPLY_LABEL } from '@/lib/agent-actions'
+import { fetchAgentRunVideo } from '@/lib/api'
+import { cn } from '@/lib/utils'
+import type {
+  Agent,
+  AgentCreateInput,
+  AgentKind,
+  AgentOutputAction,
+  AgentResponseFormat,
+  AgentRun,
+  AuthUser,
+  VideoSeconds,
+  VideoSize,
+} from '@/types/api'
+
+const AGENTS_PER_PAGE = 9
+
+const VIDEO_SIZE_OPTIONS: { value: VideoSize; label: string }[] = [
+  { value: '720x1280', label: 'Retrato pequeno (720x1280)' },
+  { value: '1280x720', label: 'Paisagem pequena (1280x720)' },
+  { value: '1024x1792', label: 'Retrato grande (1024x1792)' },
+  { value: '1792x1024', label: 'Paisagem grande (1792x1024)' },
+]
+
+const VIDEO_SECONDS_OPTIONS: VideoSeconds[] = ['4', '8', '12']
+
+export function AgentsPage() {
+  const authUser = useAuthUser<AuthUser>()
+  const agents = useAgents()
+
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [editing, setEditing] = useState<Agent | 'new' | null>(null)
+  const [deleting, setDeleting] = useState<Agent | null>(null)
+
+  const isAdmin = authUser?.role === 'admin'
+  const myCompanyId = authUser?.company_id
+
+  const sortedAgents = useMemo(() => {
+    if (!agents.data) return []
+    return [...agents.data].sort((a, b) => {
+      const aMine = a.company_id === myCompanyId ? 0 : 1
+      const bMine = b.company_id === myCompanyId ? 0 : 1
+      if (aMine !== bMine) return aMine - bMine
+      return a.name.localeCompare(b.name)
+    })
+  }, [agents.data, myCompanyId])
+
+  const selectedAgent = sortedAgents.find((agent) => agent.id === selectedId) ?? null
+
+  return (
+    <div className="flex min-h-[calc(100vh-7rem)] flex-col gap-4">
+      <PageHeader
+        title="Agentes"
+        description="Escolha um agente da biblioteca para executar, revisar resultados e aplicar saídas estruturadas quando fizer sentido."
+        icon={Bot}
+        actions={
+          <Button onClick={() => setEditing('new')}>
+            <Plus className="size-4" />
+            Criar agente
+          </Button>
+        }
+      />
+
+      {selectedAgent ? (
+        <div className="flex min-h-[calc(100vh-12rem)] flex-col overflow-hidden rounded-xl border bg-card shadow-sm">
+          <AgentWorkspace
+            agent={selectedAgent}
+            mine={selectedAgent.company_id === myCompanyId}
+            onBack={() => setSelectedId(null)}
+            onEdit={() => setEditing(selectedAgent)}
+            onDelete={() => setDeleting(selectedAgent)}
+          />
+        </div>
+      ) : (
+        <AgentLibrary
+          agents={sortedAgents}
+          loading={agents.isLoading}
+          myCompanyId={myCompanyId}
+          onSelect={(agent) => setSelectedId(agent.id)}
+          onCreate={() => setEditing('new')}
+        />
+      )}
+
+      <AgentEditSheet
+        open={editing !== null}
+        agent={editing === 'new' ? null : editing}
+        companyId={myCompanyId}
+        canGoGlobal={isAdmin}
+        onClose={() => setEditing(null)}
+        onCreated={(agent) => setSelectedId(agent.id)}
+      />
+
+      <Dialog open={Boolean(deleting)} onOpenChange={(open) => !open && setDeleting(null)}>
+        <DialogContent>
+          <DeleteAgentDialogContent agent={deleting} onClose={() => setDeleting(null)} />
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function AgentLibrary({
+  agents,
+  loading,
+  myCompanyId,
+  onSelect,
+  onCreate,
+}: {
+  agents: Agent[]
+  loading: boolean
+  myCompanyId: string | undefined
+  onSelect: (agent: Agent) => void
+  onCreate: () => void
+}) {
+  const [query, setQuery] = useState('')
+  const [page, setPage] = useState(1)
+
+  const filteredAgents = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase()
+    if (!normalized) return agents
+    return agents.filter((agent) =>
+      [agent.name, agent.description, agent.usage_instructions]
+        .filter(Boolean)
+        .some((value) => value?.toLocaleLowerCase().includes(normalized)),
+    )
+  }, [agents, query])
+
+  const totalPages = Math.max(1, Math.ceil(filteredAgents.length / AGENTS_PER_PAGE))
+  const currentPage = Math.min(page, totalPages)
+  const pageAgents = filteredAgents.slice(
+    (currentPage - 1) * AGENTS_PER_PAGE,
+    currentPage * AGENTS_PER_PAGE,
+  )
+
+  useEffect(() => {
+    setPage(1)
+  }, [query, agents.length])
+
+  const ownedCount = agents.filter((agent) => agent.company_id === myCompanyId).length
+  const globalCount = agents.filter((agent) => agent.is_global).length
+  const activeCount = agents.filter((agent) => agent.is_active).length
+
+  if (loading) {
+    return (
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {Array.from({ length: 6 }).map((_, index) => (
+          <div key={index} className="h-44 animate-pulse rounded-xl border bg-muted" />
+        ))}
+      </div>
+    )
+  }
+
+  if (agents.length === 0) {
+    return (
+      <div className="flex min-h-[24rem] items-center justify-center rounded-xl border bg-card p-6 shadow-sm">
+        <EmptyState
+          icon={Bot}
+          title="Nenhum agente ainda"
+          description="Crie o primeiro agente definindo instruções e ele aparecerá nesta biblioteca."
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Buscar por nome, descrição ou instrução"
+            className="h-10 pl-9"
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <Badge variant="outline">{agents.length} agentes</Badge>
+          <Badge variant="outline">{ownedCount} seus</Badge>
+          <Badge variant="outline">{globalCount} globais</Badge>
+          <Badge variant="outline">{activeCount} ativos</Badge>
+        </div>
+      </div>
+
+      {filteredAgents.length === 0 ? (
+        <div className="flex min-h-[18rem] items-center justify-center rounded-xl border bg-card p-6 shadow-sm">
+          <EmptyState
+            icon={Search}
+            title="Nenhum agente encontrado"
+            description="Ajuste a busca para ver outros agentes disponíveis."
+          />
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {pageAgents.map((agent) => (
+              <AgentCard
+                key={agent.id}
+                agent={agent}
+                mine={agent.company_id === myCompanyId}
+                onClick={() => onSelect(agent)}
+              />
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-3 py-2.5 shadow-sm">
+            <p className="text-sm text-muted-foreground">
+              Página {currentPage} de {totalPages} · {filteredAgents.length} resultado
+              {filteredAgents.length === 1 ? '' : 's'}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage === 1}
+                onClick={() => setPage((value) => Math.max(1, value - 1))}
+              >
+                Anterior
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={currentPage === totalPages}
+                onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
+              >
+                Próxima
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
+
+      <div className="flex justify-end sm:hidden">
+        <Button onClick={onCreate}>
+          <Plus className="size-4" />
+          Criar agente
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function AgentCard({
+  agent,
+  mine,
+  onClick,
+}: {
+  agent: Agent
+  mine: boolean
+  onClick: () => void
+}) {
+  const outputLabel =
+    AGENT_OUTPUT_ACTIONS.find((action) => action.value === agent.output_action)?.label ??
+    'Resultado configurado'
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex min-h-44 w-full flex-col rounded-xl border bg-card p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md focus-visible:border-primary focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15 transition group-hover:bg-primary group-hover:text-primary-foreground">
+          <Bot className="size-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <h3 className="min-w-0 text-base font-semibold leading-6 tracking-tight">
+              {agent.name}
+            </h3>
+            {agent.is_global ? (
+              <Badge
+                variant="outline"
+                className="border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-400"
+              >
+                <Globe className="size-3" />
+                Global
+              </Badge>
+            ) : null}
+          </div>
+          <p className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground">
+            {agent.description || 'Agente sem descrição curta.'}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Badge variant={agent.is_active ? 'secondary' : 'outline'}>
+          {agent.is_active ? 'Ativo' : 'Inativo'}
+        </Badge>
+        <Badge variant="outline">{mine ? 'Seu agente' : 'Compartilhado'}</Badge>
+        {agent.kind === 'image_to_video' ? (
+          <Badge variant="outline">
+            <Video className="size-3" />
+            Vídeo
+          </Badge>
+        ) : null}
+        {agent.uses_brand_archetype ? <Badge variant="outline">Usa arquétipo</Badge> : null}
+      </div>
+
+      <div className="mt-auto pt-4">
+        <div className="rounded-lg border bg-muted/30 px-3 py-2">
+          <p className="line-clamp-1 text-xs font-medium text-foreground/80">{outputLabel}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {agent.response_format === 'json' ? 'Resposta estruturada' : 'Resposta em texto'}
+          </p>
+        </div>
+      </div>
+    </button>
+  )
+}
+
+function DeleteAgentDialogContent({
+  agent,
+  onClose,
+}: {
+  agent: Agent | null
+  onClose: () => void
+}) {
+  const deleteAgent = useDeleteAgent()
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>Excluir agente</DialogTitle>
+        <DialogDescription>
+          Remove o agente e não afeta execuções já feitas por outras empresas, se ele era global.
+        </DialogDescription>
+      </DialogHeader>
+      <p className="text-sm">
+        Confirma a exclusão de <strong>{agent?.name}</strong>?
+      </p>
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose}>
+          Cancelar
+        </Button>
+        <Button
+          variant="destructive"
+          disabled={deleteAgent.isPending}
+          onClick={() => {
+            if (!agent) return
+            deleteAgent.mutate(agent.id, { onSuccess: onClose })
+          }}
+        >
+          {deleteAgent.isPending ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <Trash2 className="size-4" />
+          )}
+          Excluir
+        </Button>
+      </DialogFooter>
+    </>
+  )
+}
+
+function AgentWorkspace({
+  agent,
+  mine,
+  onBack,
+  onEdit,
+  onDelete,
+}: {
+  agent: Agent
+  mine: boolean
+  onBack: () => void
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  const isVideoKind = agent.kind === 'image_to_video'
+  const queryClient = useQueryClient()
+  const runs = useAgentRuns(agent.id)
+  const stream = useAgentRunStream()
+  const applyRun = useApplyAgentRun()
+  const updateOutput = useUpdateAgentRunOutput()
+  const runVideo = useRunAgentOnce()
+
+  const [message, setMessage] = useState('')
+  const [showContext, setShowContext] = useState(false)
+  const [contextRows, setContextRows] = useState<{ id: string; key: string; value: string }[]>([])
+  const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null)
+  const [viewedRun, setViewedRun] = useState<AgentRun | null>(null)
+  const [editingText, setEditingText] = useState<string | null>(null)
+  const bottomRef = useRef<HTMLDivElement | null>(null)
+
+  const videoRunUnsettled = Boolean(
+    viewedRun && (viewedRun.status === 'running' || viewedRun.status === 'pending'),
+  )
+  const poll = usePollAgentRun(isVideoKind ? (viewedRun?.id ?? null) : null, videoRunUnsettled)
+
+  useEffect(() => {
+    if (poll.data) setViewedRun(poll.data)
+  }, [poll.data])
+
+  useEffect(() => {
+    stream.reset()
+    applyRun.reset()
+    setMessage('')
+    setContextRows([])
+    setShowContext(false)
+    setSelectedImageUrl(null)
+    setViewedRun(null)
+    setEditingText(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agent.id])
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [stream.text, viewedRun])
+
+  function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (isVideoKind) {
+      if (!selectedImageUrl || videoRunUnsettled) return
+      const videoMessage = message.trim() || 'Gere um vídeo publicitário curto para este produto.'
+      setViewedRun(null)
+      applyRun.reset()
+      runVideo.mutate(
+        { id: agent.id, data: { message: videoMessage, image_urls: [selectedImageUrl] } },
+        {
+          onSuccess: (run) => {
+            setViewedRun(run)
+            setMessage('')
+            queryClient.invalidateQueries({ queryKey: agentKeys.runs(agent.id) })
+          },
+        },
+      )
+      return
+    }
+
+    const trimmed = message.trim()
+    if (!trimmed || stream.isStreaming) return
+
+    const variables: Record<string, unknown> = {}
+    for (const row of contextRows) {
+      if (row.key.trim()) variables[row.key.trim()] = row.value
+    }
+
+    setViewedRun(null)
+    setEditingText(null)
+    applyRun.reset()
+    setMessage('')
+    stream.start(agent.id, trimmed, variables, () => {
+      queryClient.invalidateQueries({ queryKey: agentKeys.runs(agent.id) })
+      queryClient.invalidateQueries({ queryKey: agentKeys.runs(undefined) })
+    })
+  }
+
+  const displayedRun = viewedRun ?? stream.run
+  const displayedText = stream.isStreaming || (!displayedRun && stream.text) ? stream.text : displayedRun?.output?.text ?? ''
+  const canApply =
+    agent.output_action !== 'none' &&
+    displayedRun?.status === 'completed' &&
+    Boolean(displayedRun?.output?.data)
+
+  return (
+    <>
+      <div className="space-y-3 border-b p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <Button variant="outline" size="icon" className="mt-1 shrink-0" onClick={onBack}>
+              <ArrowLeft className="size-4" />
+            </Button>
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/15">
+              <Bot className="size-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-base font-semibold tracking-tight">{agent.name}</h2>
+                {agent.is_global ? (
+                  <Badge
+                    variant="outline"
+                    className="border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-400"
+                  >
+                    <Globe className="size-3" />
+                    Global
+                  </Badge>
+                ) : null}
+                {!agent.is_active ? <Badge variant="outline">Inativo</Badge> : null}
+              </div>
+              {agent.description ? (
+                <p className="mt-0.5 text-sm text-muted-foreground">{agent.description}</p>
+              ) : null}
+            </div>
+          </div>
+          {mine ? (
+            <div className="flex shrink-0 items-center gap-2">
+              <Button variant="outline" size="sm" onClick={onEdit}>
+                <Pencil className="size-4" />
+                Editar
+              </Button>
+              <Button variant="destructive" size="sm" onClick={onDelete}>
+                <Trash2 className="size-4" />
+                Excluir
+              </Button>
+            </div>
+          ) : null}
+        </div>
+
+        {agent.usage_instructions ? (
+          <div className="flex gap-2.5 rounded-lg border border-primary/15 bg-primary/5 p-3 text-sm">
+            <div className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+              <Info className="size-3" />
+            </div>
+            <p className="whitespace-pre-wrap leading-6 text-foreground/90">
+              {agent.usage_instructions}
+            </p>
+          </div>
+        ) : null}
+      </div>
+
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="flex w-full flex-col gap-4 px-4 py-5 xl:px-8">
+          {!agent.is_active ? (
+            <p className="text-sm text-muted-foreground">
+              Este agente está inativo. Ative-o em "Editar" pra poder executar.
+            </p>
+          ) : (
+            <form
+              onSubmit={onSubmit}
+              className="space-y-2.5 rounded-xl border bg-background p-3 shadow-sm transition focus-within:border-primary/40 focus-within:shadow-md"
+            >
+              {isVideoKind ? (
+                <div className="space-y-2.5">
+                  <CatalogImagePicker value={selectedImageUrl} onChange={setSelectedImageUrl} />
+                  <Textarea
+                    value={message}
+                    onChange={(event) => setMessage(event.target.value)}
+                    placeholder="Instruções extras para este vídeo (opcional)"
+                    rows={2}
+                    className="resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
+                  />
+                </div>
+              ) : (
+                <Textarea
+                  value={message}
+                  onChange={(event) => setMessage(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                      event.preventDefault()
+                      event.currentTarget.form?.requestSubmit()
+                    }
+                  }}
+                  placeholder="O que você quer pedir a este agente?"
+                  rows={3}
+                  className="resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
+                />
+              )}
+
+              {!isVideoKind && showContext ? (
+                <ExtraContextEditor rows={contextRows} onChange={setContextRows} />
+              ) : null}
+
+              <div className="flex items-center justify-between gap-2 border-t pt-2.5">
+                {isVideoKind ? (
+                  <span className="text-xs text-muted-foreground">
+                    A geração leva alguns minutos.
+                  </span>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs text-muted-foreground"
+                    onClick={() => setShowContext((open) => !open)}
+                  >
+                    {showContext ? 'Ocultar contexto extra' : '+ Adicionar contexto extra'}
+                  </Button>
+                )}
+                <div className="flex items-center gap-3">
+                  {isVideoKind ? (
+                    <Button
+                      type="submit"
+                      disabled={!selectedImageUrl || runVideo.isPending || videoRunUnsettled}
+                    >
+                      {runVideo.isPending || videoRunUnsettled ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Video className="size-4" />
+                      )}
+                      Gerar vídeo
+                    </Button>
+                  ) : (
+                    <>
+                      <span className="hidden text-xs text-muted-foreground sm:inline">
+                        Enter para executar · Shift+Enter para nova linha
+                      </span>
+                      {stream.isStreaming ? (
+                        <Button type="button" variant="outline" onClick={stream.stop}>
+                          <Square className="size-4" />
+                          Parar
+                        </Button>
+                      ) : (
+                        <Button type="submit" disabled={!message.trim()}>
+                          <Play className="size-4" />
+                          Executar
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            </form>
+          )}
+
+          {stream.error || (displayedRun?.status === 'failed' && displayedRun.error) ? (
+            <p className="text-sm text-destructive">
+              {stream.error || displayedRun?.error}
+            </p>
+          ) : null}
+
+          {displayedText || stream.isStreaming || (isVideoKind && displayedRun) ? (
+            <ResultCard
+              agentName={agent.name}
+              isVideoKind={isVideoKind}
+              text={displayedText}
+              isStreaming={stream.isStreaming}
+              run={displayedRun}
+              editingText={editingText}
+              onStartEdit={() => setEditingText(displayedText)}
+              onCancelEdit={() => setEditingText(null)}
+              onChangeEdit={setEditingText}
+              onSaveEdit={() => {
+                if (!displayedRun || editingText === null) return
+                updateOutput.mutate(
+                  { id: displayedRun.id, text: editingText },
+                  {
+                    onSuccess: (run) => {
+                      setViewedRun(run)
+                      setEditingText(null)
+                    },
+                  },
+                )
+              }}
+              savingEdit={updateOutput.isPending}
+              canApply={canApply}
+              applyLabel={
+                AGENT_OUTPUT_ACTION_APPLY_LABEL[agent.output_action] ?? 'Aplicar resultado'
+              }
+              onApply={() => displayedRun && applyRun.mutate(displayedRun.id)}
+              applying={applyRun.isPending}
+              applied={applyRun.isSuccess}
+            />
+          ) : null}
+
+          <div ref={bottomRef} />
+
+          <RunHistory
+            runs={runs.data}
+            loading={runs.isLoading}
+            activeRunId={displayedRun?.id}
+            onSelect={(run) => {
+              stream.reset()
+              applyRun.reset()
+              setEditingText(null)
+              setViewedRun(run)
+            }}
+          />
+        </div>
+      </ScrollArea>
+    </>
+  )
+}
+
+function ResultCard({
+  agentName,
+  isVideoKind,
+  text,
+  isStreaming,
+  run,
+  editingText,
+  onStartEdit,
+  onCancelEdit,
+  onChangeEdit,
+  onSaveEdit,
+  savingEdit,
+  canApply,
+  applyLabel,
+  onApply,
+  applying,
+  applied,
+}: {
+  agentName: string
+  isVideoKind: boolean
+  text: string
+  isStreaming: boolean
+  run: AgentRun | null
+  editingText: string | null
+  onStartEdit: () => void
+  onCancelEdit: () => void
+  onChangeEdit: (value: string) => void
+  onSaveEdit: () => void
+  savingEdit: boolean
+  canApply: boolean
+  applyLabel: string
+  onApply: () => void
+  applying: boolean
+  applied: boolean
+}) {
+  const isEditing = editingText !== null
+  const [showData, setShowData] = useState(false)
+
+  async function copyText() {
+    await navigator.clipboard.writeText(text)
+    toast.success('Resposta copiada')
+  }
+
+  async function copyData() {
+    if (!run?.output?.data) return
+    await navigator.clipboard.writeText(JSON.stringify(run.output.data, null, 2))
+    toast.success('Dados copiados')
+  }
+
+  return (
+    <div className="flex items-start gap-3">
+      <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary ring-1 ring-primary/15">
+        <Sparkles className="size-4" />
+      </div>
+      <div className="min-w-0 flex-1 space-y-3 rounded-2xl border bg-background px-4 py-3 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-medium">{agentName}</span>
+            {isStreaming ? (
+              <span className="text-xs text-muted-foreground">gerando resposta…</span>
+            ) : run ? (
+              <span className="text-xs text-muted-foreground">
+                <RelativeTime value={run.updated_at} />
+              </span>
+            ) : null}
+            {run?.status === 'failed' ? (
+              <Badge variant="outline" className="border-rose-200 bg-rose-50 text-rose-700">
+                Falhou
+              </Badge>
+            ) : null}
+          </div>
+          {!isStreaming && run && !isEditing && !isVideoKind ? (
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="icon-xs" onClick={copyText}>
+                <Copy className="size-3.5" />
+              </Button>
+              <Button variant="ghost" size="sm" onClick={onStartEdit}>
+                <Pencil className="size-4" />
+                Editar
+              </Button>
+            </div>
+          ) : null}
+        </div>
+
+        {isVideoKind ? (
+          run?.output?.video_url ? (
+            <RunVideoPlayer runId={run.id} />
+          ) : run?.status === 'failed' ? null : (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              Gerando vídeo… isso pode levar alguns minutos.
+            </div>
+          )
+        ) : isEditing ? (
+          <div className="space-y-2">
+            <Textarea
+              value={editingText ?? ''}
+              onChange={(event) => onChangeEdit(event.target.value)}
+              className="min-h-32"
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={onCancelEdit}>
+                Cancelar
+              </Button>
+              <Button size="sm" disabled={savingEdit} onClick={onSaveEdit}>
+                {savingEdit ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="size-4" />
+                )}
+                Salvar edição
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <p className="whitespace-pre-wrap text-sm leading-6">
+            {text || (isStreaming ? '' : 'Sem resposta.')}
+            {isStreaming ? (
+              <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse bg-foreground align-middle" />
+            ) : null}
+          </p>
+        )}
+
+        {!isStreaming && run?.output?.data ? (
+          <div className="rounded-lg border bg-muted/40">
+            <button
+              type="button"
+              onClick={() => setShowData((open) => !open)}
+              className="flex w-full items-center justify-between px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground"
+            >
+              <span className="flex items-center gap-1.5">
+                <ChevronDown
+                  className={cn('size-3 transition-transform', showData && 'rotate-180')}
+                />
+                Dados estruturados
+              </span>
+              {showData ? (
+                <span onClick={(event) => event.stopPropagation()}>
+                  <Button variant="ghost" size="icon-xs" onClick={copyData}>
+                    <Copy className="size-3.5" />
+                  </Button>
+                </span>
+              ) : null}
+            </button>
+            {showData ? (
+              <pre className="overflow-x-auto border-t px-3 py-2.5 text-xs">
+                {JSON.stringify(run.output.data, null, 2)}
+              </pre>
+            ) : null}
+          </div>
+        ) : null}
+
+        {canApply && !isEditing ? (
+          <div className="flex items-center gap-2.5 border-t pt-3">
+            <Button size="sm" disabled={applying} onClick={onApply}>
+              {applying ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Wand2 className="size-4" />
+              )}
+              {applyLabel}
+            </Button>
+            {applied ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:ring-emerald-900">
+                <CheckCircle2 className="size-3" />
+                Aplicado
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function RunVideoPlayer({ runId }: { runId: string }) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let objectUrl: string | null = null
+    let cancelled = false
+    setLoading(true)
+    setFailed(false)
+    fetchAgentRunVideo(runId)
+      .then((blob) => {
+        if (cancelled) return
+        objectUrl = URL.createObjectURL(blob)
+        setBlobUrl(objectUrl)
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [runId])
+
+  if (loading) return <div className="h-64 w-36 animate-pulse rounded-lg bg-muted" />
+  if (failed || !blobUrl) {
+    return (
+      <p className="text-sm text-destructive">
+        Não foi possível carregar o vídeo — o OpenAI expira o conteúdo ~48h após a geração.
+      </p>
+    )
+  }
+  return <video controls src={blobUrl} className="w-full max-w-64 rounded-lg border bg-black" />
+}
+
+function CatalogImagePicker({
+  value,
+  onChange,
+}: {
+  value: string | null
+  onChange: (url: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const products = useProducts(search, true, 24, 0)
+  const options = (products.data?.items ?? []).filter((product) => product.image_url)
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex w-full items-center gap-3 rounded-lg border bg-muted/25 p-2 text-left transition hover:bg-muted"
+        >
+          {value ? (
+            <img src={value} alt="" className="size-12 shrink-0 rounded-md object-cover" />
+          ) : (
+            <div className="flex size-12 shrink-0 items-center justify-center rounded-md bg-muted">
+              <ImageIcon className="size-5 text-muted-foreground" />
+            </div>
+          )}
+          <div className="min-w-0">
+            <p className="text-sm font-medium">
+              {value ? 'Imagem selecionada' : 'Selecionar imagem do catálogo'}
+            </p>
+            <p className="text-xs text-muted-foreground">Clique para escolher um produto</p>
+          </div>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-96 p-0" align="start">
+        <div className="border-b p-2">
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar produto…"
+            className="h-9"
+          />
+        </div>
+        <div className="max-h-72 overflow-y-auto p-2">
+          {products.isLoading ? (
+            <p className="p-3 text-center text-sm text-muted-foreground">Carregando…</p>
+          ) : options.length === 0 ? (
+            <p className="p-3 text-center text-sm text-muted-foreground">
+              Nenhum produto com imagem encontrado.
+            </p>
+          ) : (
+            <div className="grid grid-cols-3 gap-2">
+              {options.map((product) => (
+                <button
+                  key={product.id}
+                  type="button"
+                  onClick={() => {
+                    onChange(product.image_url as string)
+                    setOpen(false)
+                  }}
+                  className={cn(
+                    'space-y-1 rounded-md p-1 text-left transition hover:bg-muted',
+                    value === product.image_url && 'ring-2 ring-primary',
+                  )}
+                >
+                  <img
+                    src={product.image_url ?? undefined}
+                    alt=""
+                    className="aspect-square w-full rounded-md object-cover"
+                  />
+                  <p className="line-clamp-1 text-xs">{product.name}</p>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+const RUN_STATUS_META: Record<string, { label: string; icon: typeof Clock; className: string }> = {
+  completed: { label: 'Concluído', icon: CheckCircle2, className: 'text-emerald-600' },
+  failed: { label: 'Falhou', icon: XCircle, className: 'text-rose-600' },
+  running: { label: 'Executando', icon: Loader2, className: 'text-amber-600' },
+  pending: { label: 'Pendente', icon: Clock, className: 'text-muted-foreground' },
+}
+
+function RunHistory({
+  runs,
+  loading,
+  activeRunId,
+  onSelect,
+}: {
+  runs: AgentRun[] | undefined
+  loading: boolean
+  activeRunId: string | undefined
+  onSelect: (run: AgentRun) => void
+}) {
+  if (loading) return <div className="h-16 animate-pulse rounded-lg bg-muted" />
+  if (!runs || runs.length === 0) return null
+
+  return (
+    <div className="space-y-2 pt-2">
+      <p className="text-xs font-medium text-muted-foreground">Execuções anteriores</p>
+      <div className="space-y-1.5">
+        {runs.map((run) => {
+          const meta = RUN_STATUS_META[run.status] ?? RUN_STATUS_META.pending
+          const StatusIcon = meta.icon
+          const active = activeRunId === run.id
+          return (
+            <button
+              key={run.id}
+              type="button"
+              onClick={() => onSelect(run)}
+              className={cn(
+                'flex w-full items-start gap-2 rounded-lg border p-2.5 text-left text-xs transition hover:bg-muted hover:shadow-sm',
+                active && 'border-primary/30 bg-primary/5',
+              )}
+            >
+              <StatusIcon className={cn('mt-0.5 size-3.5 shrink-0', meta.className)} />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-foreground/80">{meta.label}</span>
+                  <RelativeTime value={run.created_at} />
+                </div>
+                <p className="mt-0.5 line-clamp-1 text-muted-foreground">{run.input.message}</p>
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function ExtraContextEditor({
+  rows,
+  onChange,
+}: {
+  rows: { id: string; key: string; value: string }[]
+  onChange: (rows: { id: string; key: string; value: string }[]) => void
+}) {
+  function updateRow(id: string, patch: Partial<{ key: string; value: string }>) {
+    onChange(rows.map((row) => (row.id === id ? { ...row, ...patch } : row)))
+  }
+
+  function addRow() {
+    onChange([...rows, { id: crypto.randomUUID(), key: '', value: '' }])
+  }
+
+  function removeRow(id: string) {
+    onChange(rows.filter((row) => row.id !== id))
+  }
+
+  return (
+    <div className="space-y-2 rounded-lg border bg-muted/25 p-2">
+      <p className="text-xs text-muted-foreground">
+        Informações extras que o agente deve considerar (opcional).
+      </p>
+      {rows.map((row) => (
+        <div key={row.id} className="flex gap-2">
+          <Input
+            value={row.key}
+            onChange={(event) => updateRow(row.id, { key: event.target.value })}
+            placeholder="nome"
+            className="text-xs"
+          />
+          <Input
+            value={row.value}
+            onChange={(event) => updateRow(row.id, { value: event.target.value })}
+            placeholder="valor"
+            className="text-xs"
+          />
+          <Button type="button" variant="ghost" size="icon" onClick={() => removeRow(row.id)}>
+            <X className="size-4" />
+          </Button>
+        </div>
+      ))}
+      <Button type="button" variant="outline" size="sm" onClick={addRow}>
+        <Plus className="size-4" />
+        Adicionar
+      </Button>
+    </div>
+  )
+}
+
+function AgentEditSheet({
+  open,
+  agent,
+  companyId,
+  canGoGlobal,
+  onClose,
+  onCreated,
+}: {
+  open: boolean
+  agent: Agent | null
+  companyId: string | undefined
+  canGoGlobal: boolean
+  onClose: () => void
+  onCreated: (agent: Agent) => void
+}) {
+  const createAgent = useCreateAgent()
+  const updateAgent = useUpdateAgent()
+
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [kind, setKind] = useState<AgentKind>('chat')
+  const [usageInstructions, setUsageInstructions] = useState('')
+  const [systemPrompt, setSystemPrompt] = useState('')
+  const [outputAction, setOutputAction] = useState<AgentOutputAction>('none')
+  const [usesBrandArchetype, setUsesBrandArchetype] = useState(false)
+  const [responseFormat, setResponseFormat] = useState<AgentResponseFormat>('text')
+  const [isActive, setIsActive] = useState(true)
+  const [isGlobal, setIsGlobal] = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [model, setModel] = useState('')
+  const [temperature, setTemperature] = useState('0.3')
+  const [videoSize, setVideoSize] = useState<VideoSize>('720x1280')
+  const [videoSeconds, setVideoSeconds] = useState<VideoSeconds>('8')
+
+  useEffect(() => {
+    if (!open) return
+    setName(agent?.name ?? '')
+    setDescription(agent?.description ?? '')
+    setKind(agent?.kind ?? 'chat')
+    setUsageInstructions(agent?.usage_instructions ?? '')
+    setSystemPrompt(agent?.system_prompt ?? '')
+    setOutputAction(agent?.output_action ?? 'none')
+    setUsesBrandArchetype(agent?.uses_brand_archetype ?? false)
+    setResponseFormat(agent?.response_format ?? 'text')
+    setIsActive(agent?.is_active ?? true)
+    setIsGlobal(agent?.is_global ?? false)
+    setModel(agent?.model ?? '')
+    setTemperature(String(agent?.temperature ?? 0.3))
+    setVideoSize(agent?.video_size ?? '720x1280')
+    setVideoSeconds(agent?.video_seconds ?? '8')
+    setShowAdvanced(false)
+  }, [open, agent])
+
+  const isVideoKind = kind === 'image_to_video'
+
+  function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    const temperatureValue = Number(temperature)
+    if (Number.isNaN(temperatureValue)) {
+      toast.error('Temperatura inválida')
+      return
+    }
+    const payload = {
+      name,
+      description: description || null,
+      usage_instructions: usageInstructions || null,
+      system_prompt: systemPrompt,
+      kind,
+      model: model || null,
+      temperature: isVideoKind ? 0.3 : temperatureValue,
+      uses_brand_archetype: isVideoKind ? false : usesBrandArchetype,
+      response_format: isVideoKind ? 'text' : responseFormat,
+      output_action: isVideoKind ? 'none' : outputAction,
+      video_size: isVideoKind ? videoSize : null,
+      video_seconds: isVideoKind ? videoSeconds : null,
+      is_active: isActive,
+      is_global: isGlobal,
+    }
+
+    if (agent) {
+      updateAgent.mutate({ id: agent.id, data: payload }, { onSuccess: onClose })
+    } else {
+      if (!companyId) return
+      const createPayload: AgentCreateInput = { ...payload, company_id: companyId }
+      createAgent.mutate(createPayload, {
+        onSuccess: (created) => {
+          onCreated(created)
+          onClose()
+        },
+      })
+    }
+  }
+
+  const isPending = createAgent.isPending || updateAgent.isPending
+
+  return (
+    <Sheet open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+      <SheetContent className="overflow-y-auto data-[side=right]:w-full data-[side=right]:sm:max-w-none data-[side=right]:lg:w-[45vw]">
+        <SheetHeader>
+          <SheetTitle>{agent ? 'Editar agente' : 'Criar agente'}</SheetTitle>
+          <SheetDescription>
+            Defina as instruções do agente — sem precisar de deploy pra mudar o comportamento
+            dele depois.
+          </SheetDescription>
+        </SheetHeader>
+
+        <form className="space-y-4 px-4 pb-6" onSubmit={onSubmit}>
+          <div className="space-y-2">
+            <Label htmlFor="agent-name">Nome</Label>
+            <Input
+              id="agent-name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="ex: Gerador de arquétipo de marca"
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Tipo de agente</Label>
+            <Select
+              value={kind}
+              onValueChange={(value) => setKind(value as AgentKind)}
+              disabled={Boolean(agent)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="chat">Conversa (pergunta e resposta)</SelectItem>
+                <SelectItem value="image_to_video">Imagem → vídeo</SelectItem>
+              </SelectContent>
+            </Select>
+            {agent ? (
+              <p className="text-xs text-muted-foreground">
+                O tipo não pode ser alterado depois de criado.
+              </p>
+            ) : null}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="agent-description">Descrição curta</Label>
+            <Input
+              id="agent-description"
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="Uma frase explicando pra que serve"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="agent-usage">Instruções para quem for usar</Label>
+            <Textarea
+              id="agent-usage"
+              value={usageInstructions}
+              onChange={(event) => setUsageInstructions(event.target.value)}
+              placeholder="O que a pessoa deve escrever e o que esperar de volta"
+              className="min-h-20"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="agent-system-prompt">
+              {isVideoKind ? 'Direção criativa base' : 'Como o agente deve se comportar'}
+            </Label>
+            <Textarea
+              id="agent-system-prompt"
+              value={systemPrompt}
+              onChange={(event) => setSystemPrompt(event.target.value)}
+              className="min-h-32"
+              placeholder={
+                isVideoKind
+                  ? 'O que toda geração deste agente deve seguir: estilo de câmera, iluminação, o que preservar do produto...'
+                  : 'Você é um agente que...'
+              }
+              required
+            />
+          </div>
+
+          {isVideoKind ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Formato do vídeo</Label>
+                <Select value={videoSize} onValueChange={(value) => setVideoSize(value as VideoSize)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {VIDEO_SIZE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Duração</Label>
+                <Select
+                  value={videoSeconds}
+                  onValueChange={(value) => setVideoSeconds(value as VideoSeconds)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {VIDEO_SECONDS_OPTIONS.map((seconds) => (
+                      <SelectItem key={seconds} value={seconds}>
+                        {seconds}s
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label>O que fazer com o resultado</Label>
+                <Select
+                  value={outputAction}
+                  onValueChange={(value) => setOutputAction(value as AgentOutputAction)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {AGENT_OUTPUT_ACTIONS.map((action) => (
+                      <SelectItem key={action.value} value={action.value}>
+                        {action.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <label className="flex items-center gap-2 rounded-lg border bg-muted/35 p-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={usesBrandArchetype}
+                  onChange={(event) => setUsesBrandArchetype(event.target.checked)}
+                  className="size-4 accent-primary"
+                />
+                Usar o arquétipo de marca da empresa como contexto
+              </label>
+            </>
+          )}
+
+          <label className="flex items-center gap-2 rounded-lg border bg-muted/35 p-3 text-sm">
+            <input
+              type="checkbox"
+              checked={isActive}
+              onChange={(event) => setIsActive(event.target.checked)}
+              className="size-4 accent-primary"
+            />
+            Agente ativo
+          </label>
+
+          <label
+            className={cn(
+              'flex items-center gap-2 rounded-lg border bg-muted/35 p-3 text-sm',
+              !canGoGlobal && 'opacity-50',
+            )}
+          >
+            <input
+              type="checkbox"
+              checked={isGlobal}
+              disabled={!canGoGlobal}
+              onChange={(event) => setIsGlobal(event.target.checked)}
+              className="size-4 accent-primary"
+            />
+            <Globe className="size-4 text-primary" />
+            <span>
+              Global (visível e executável por todas as empresas)
+              {!canGoGlobal ? ' — só admins podem ativar' : ''}
+            </span>
+          </label>
+
+          <div className="rounded-lg border">
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((open) => !open)}
+              className="flex w-full items-center justify-between px-3 py-2.5 text-sm font-medium"
+            >
+              Configurações avançadas
+              <ChevronDown
+                className={cn('size-4 transition-transform', showAdvanced && 'rotate-180')}
+              />
+            </button>
+            {showAdvanced ? (
+              <div className="grid gap-4 border-t p-3 sm:grid-cols-3">
+                <div className="space-y-2">
+                  <Label htmlFor="agent-model">{isVideoKind ? 'Modelo Sora' : 'Modelo'}</Label>
+                  <Input
+                    id="agent-model"
+                    value={model}
+                    onChange={(event) => setModel(event.target.value)}
+                    placeholder={isVideoKind ? 'sora-2 (padrão)' : 'padrão'}
+                  />
+                </div>
+                {!isVideoKind ? (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="agent-temperature">Temperatura</Label>
+                      <Input
+                        id="agent-temperature"
+                        type="number"
+                        min={0}
+                        max={2}
+                        step={0.1}
+                        value={temperature}
+                        onChange={(event) => setTemperature(event.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Formato de resposta</Label>
+                      <Select
+                        value={responseFormat}
+                        onValueChange={(value) => setResponseFormat(value as AgentResponseFormat)}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="text">Texto</SelectItem>
+                          <SelectItem value="json">Dado estruturado</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="sticky bottom-0 -mx-4 flex justify-end gap-2 border-t bg-popover/95 p-4 backdrop-blur">
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button disabled={isPending}>
+              {isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="size-4" />
+              )}
+              Salvar
+            </Button>
+          </div>
+        </form>
+      </SheetContent>
+    </Sheet>
+  )
+}

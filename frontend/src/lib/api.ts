@@ -1,4 +1,11 @@
 import type {
+  Agent,
+  AgentCreateInput,
+  AgentRun,
+  AgentRunApplyResponse,
+  AgentRunRequestInput,
+  AgentStreamEvent,
+  AgentUpdateInput,
   AskResponse,
   BoughtTogetherPair,
   BrandArchetypeProfile,
@@ -10,6 +17,7 @@ import type {
   CustomerDetail,
   CustomerSummary,
   Integration,
+  IntegrationCreateInput,
   IntegrationUpdateInput,
   LoginResponse,
   OracleStreamEvent,
@@ -17,6 +25,7 @@ import type {
   OrderFiltersResponse,
   OrderListResponse,
   Overview,
+  ProductListResponse,
   RecommendationResult,
   RfmSegmentSummary,
   SyncStatus,
@@ -138,6 +147,12 @@ export const getCompanies = () => request<Company[]>('/companies')
 
 export const getIntegrations = () => request<Integration[]>('/integrations')
 
+export const createIntegration = (data: IntegrationCreateInput) =>
+  request<Integration>('/integrations', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+
 export const updateIntegration = (integrationId: string, data: IntegrationUpdateInput) =>
   request<Integration>(`/integrations/${integrationId}`, {
     method: 'PATCH',
@@ -146,6 +161,14 @@ export const updateIntegration = (integrationId: string, data: IntegrationUpdate
 
 export const deleteIntegration = (integrationId: string) =>
   request<void>(`/integrations/${integrationId}`, { method: 'DELETE' })
+
+// Catálogo ERP
+export const getProducts = (
+  search?: string,
+  active?: boolean | null,
+  limit = 48,
+  offset = 0,
+) => request<ProductListResponse>(`/products${qs({ search, active, limit, offset })}`)
 
 // Arquétipo de marca
 export const getBrandArchetypeProfiles = () =>
@@ -168,6 +191,102 @@ export const updateBrandArchetypeProfile = (
 
 export const deleteBrandArchetypeProfile = (profileId: string) =>
   request<void>(`/brand-archetype-profiles/${profileId}`, { method: 'DELETE' })
+
+// Agentes
+export const getAgents = () => request<Agent[]>('/agents')
+
+export const createAgent = (data: AgentCreateInput) =>
+  request<Agent>('/agents', { method: 'POST', body: JSON.stringify(data) })
+
+export const updateAgent = (agentId: string, data: AgentUpdateInput) =>
+  request<Agent>(`/agents/${agentId}`, { method: 'PATCH', body: JSON.stringify(data) })
+
+export const deleteAgent = (agentId: string) =>
+  request<void>(`/agents/${agentId}`, { method: 'DELETE' })
+
+export const runAgent = (agentId: string, data: AgentRunRequestInput) =>
+  request<AgentRun>(`/agents/${agentId}/run`, { method: 'POST', body: JSON.stringify(data) })
+
+export const getAgentRuns = (agentId?: string, limit = 20) =>
+  request<AgentRun[]>(`/agent-runs${qs({ agent_id: agentId, limit })}`)
+
+export const getAgentRun = (runId: string) => request<AgentRun>(`/agent-runs/${runId}`)
+
+export const updateAgentRunOutput = (runId: string, text: string) =>
+  request<AgentRun>(`/agent-runs/${runId}`, { method: 'PATCH', body: JSON.stringify({ text }) })
+
+export const applyAgentRun = (runId: string) =>
+  request<AgentRunApplyResponse>(`/agent-runs/${runId}/apply`, { method: 'POST' })
+
+/**
+ * `kind="image_to_video"` runs expose their video at `GET /agent-runs/{id}/video`,
+ * which needs our Authorization header — a plain `<video src>` can't send
+ * one, so the caller fetches the bytes here and turns them into an object
+ * URL (`URL.createObjectURL`) to use as the player's `src`.
+ */
+export async function fetchAgentRunVideo(runId: string): Promise<Blob> {
+  const token = getStoredAccessToken()
+  const response = await fetch(`${BASE_URL}/agent-runs/${runId}/video`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!response.ok) {
+    throw new ApiError(response.status, `Erro ${response.status} ao baixar vídeo`)
+  }
+  return response.blob()
+}
+
+/**
+ * Variante em streaming de `runAgent` (`POST /agents/{id}/run/stream`, SSE) —
+ * mesma técnica manual de parsing de `streamOracleAsk` (a `EventSource`
+ * nativa só faz GET, e este endpoint precisa de um corpo POST).
+ */
+export async function streamAgentRun(
+  agentId: string,
+  message: string,
+  variables: Record<string, unknown>,
+  onEvent: (event: AgentStreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(`${BASE_URL}/agents/${agentId}/run/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(getStoredAccessToken() ? { Authorization: `Bearer ${getStoredAccessToken()}` } : {}),
+    },
+    body: JSON.stringify({ message, variables }),
+    signal,
+  })
+
+  if (!response.ok || !response.body) {
+    throw new ApiError(response.status, `Erro ${response.status} ao executar agente`)
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+
+    let boundary = buffer.indexOf('\n\n')
+    while (boundary !== -1) {
+      const rawEvent = buffer.slice(0, boundary)
+      buffer = buffer.slice(boundary + 2)
+
+      const dataLine = rawEvent.split('\n').find((line) => line.startsWith('data: '))
+      if (dataLine) {
+        try {
+          onEvent(JSON.parse(dataLine.slice('data: '.length)) as AgentStreamEvent)
+        } catch {
+          // linha malformada — ignora
+        }
+      }
+      boundary = buffer.indexOf('\n\n')
+    }
+  }
+}
 
 // Pedidos
 export const getOrders = (filters: OrderFilterParams = {}, limit = 50, offset = 0) =>

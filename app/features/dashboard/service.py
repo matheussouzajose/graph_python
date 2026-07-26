@@ -26,6 +26,7 @@ from app.features.dashboard.schemas import (
     CustomerDetail,
     CustomerPurchasedProduct,
     CustomerSummary,
+    IntegrationResourceSyncStatus,
     IntegrationSyncStatus,
     OrderStatusCount,
     OverviewResponse,
@@ -37,6 +38,7 @@ from app.features.dashboard.schemas import (
 )
 from app.features.integration.erp.factory import describe_sync_progress
 from app.features.integration.repository import IntegrationRepository
+from app.features.integration.sync_resources import enabled_sync_resources
 from app.features.integration.sync_state import RESOURCE_ORDERS, IntegrationSyncStateRepository
 
 
@@ -74,7 +76,9 @@ class DashboardService:
             (
                 state.last_synced_at
                 for state in sync_states
-                if state.integration_id in integration_ids and state.last_synced_at is not None
+                if state.integration_id in integration_ids
+                and state.resource == RESOURCE_ORDERS
+                and state.last_synced_at is not None
             ),
             default=None,
         )
@@ -269,31 +273,43 @@ class DashboardService:
         algorithm_run_rows = await asyncio.to_thread(
             run_query, cypher.ALGORITHM_RUNS, {"company_id": str(external_company_id)}
         )
-        states_by_integration_id = {
-            state.integration_id: state
-            for state in sync_states
-            if state.resource == RESOURCE_ORDERS
-        }
+        states_by_key = {(state.integration_id, state.resource): state for state in sync_states}
 
         # Iterate integrations, not sync_states, so an integration that has
         # never run a sync (no checkpoint row yet) still shows up — as
         # "never_synced" — instead of silently missing from the view.
         integration_statuses = []
         for integration in integrations:
-            state = states_by_integration_id.get(integration.id)
+            resources = enabled_sync_resources(integration.params)
+            resource_statuses = []
+            for resource in resources:
+                resource_state = states_by_key.get((integration.id, resource))
+                resource_statuses.append(
+                    IntegrationResourceSyncStatus(
+                        resource=resource,
+                        status=resource_state.status if resource_state else "never_synced",
+                        last_synced_at=resource_state.last_synced_at if resource_state else None,
+                        synced_until=(
+                            describe_sync_progress(integration.provider, resource_state.cursor)
+                            if resource_state
+                            else None
+                        ),
+                    )
+                )
+            state = next(
+                (status for status in resource_statuses if status.resource == RESOURCE_ORDERS),
+                resource_statuses[0],
+            )
             integration_statuses.append(
                 IntegrationSyncStatus(
                     integration_id=str(integration.id),
                     integration_name=integration.name,
                     provider=integration.provider,
                     is_active=integration.is_active,
-                    status=state.status if state else "never_synced",
-                    last_synced_at=state.last_synced_at if state else None,
-                    synced_until=(
-                        describe_sync_progress(integration.provider, state.cursor)
-                        if state
-                        else None
-                    ),
+                    status=state.status,
+                    last_synced_at=state.last_synced_at,
+                    synced_until=state.synced_until,
+                    resource_statuses=resource_statuses,
                 )
             )
 

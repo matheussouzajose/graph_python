@@ -24,11 +24,12 @@ parked still-open one) gets a fresh "now".
 import json
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
+from typing import Any
 from uuid import UUID
 
 import httpx
 
-from app.features.integration.erp.base import ERPClientError, OrderPage
+from app.features.integration.erp.base import ERPClientError, OrderPage, ProductPage
 
 _DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
@@ -106,6 +107,37 @@ class VestiClient:
         return _Cursor(window_start=window_start, window_end=window_end, page=1)
 
     async def fetch_orders(self, cursor: str | None, page_size: int = 100) -> OrderPage:
+        page = await self._fetch_resource(
+            resource_path="v1/orders",
+            cursor=cursor,
+            page_size=page_size,
+        )
+        return OrderPage(
+            orders=page.items,
+            next_cursor=page.next_cursor,
+            has_more=page.has_more,
+        )
+
+    async def fetch_products(self, cursor: str | None, page_size: int = 100) -> ProductPage:
+        page = await self._fetch_resource(
+            resource_path="v2/products",
+            cursor=cursor,
+            page_size=page_size,
+            extra_params={"has_category": 1},
+        )
+        return ProductPage(
+            products=page.items,
+            next_cursor=page.next_cursor,
+            has_more=page.has_more,
+        )
+
+    async def _fetch_resource(
+        self,
+        resource_path: str,
+        cursor: str | None,
+        page_size: int,
+        extra_params: dict[str, int | str] | None = None,
+    ) -> "_ResourcePage":
         if cursor is None:
             state = self._open_window(self._backfill_start_date)
         else:
@@ -120,16 +152,18 @@ class VestiClient:
             else:
                 state = decoded
 
-        orders, has_next_page = await self._request(
+        items, has_next_page = await self._request(
+            resource_path=resource_path,
             window_start=datetime.combine(state.window_start, time.min, tzinfo=UTC),
             window_end=state.window_end,
             page=state.page,
             page_size=page_size,
+            extra_params=extra_params,
         )
 
         if has_next_page:
             next_cursor = _Cursor(state.window_start, state.window_end, state.page + 1).encode()
-            return OrderPage(orders=orders, next_cursor=next_cursor, has_more=True)
+            return _ResourcePage(items=items, next_cursor=next_cursor, has_more=True)
 
         full_span_end = datetime.combine(
             state.window_start + timedelta(days=self._window_days), time.min, tzinfo=UTC
@@ -139,23 +173,31 @@ class VestiClient:
             # Capped at "now" rather than the full window_days span — this
             # window isn't closed yet. Stay parked here for the next run.
             next_cursor = _Cursor(state.window_start, state.window_end, 1).encode()
-            return OrderPage(orders=orders, next_cursor=next_cursor, has_more=False)
+            return _ResourcePage(items=items, next_cursor=next_cursor, has_more=False)
 
         next_window_start = state.window_start + timedelta(days=self._window_days)
         next_state = self._open_window(next_window_start)
         next_cursor = next_state.encode()
-        return OrderPage(orders=orders, next_cursor=next_cursor, has_more=True)
+        return _ResourcePage(items=items, next_cursor=next_cursor, has_more=True)
 
     async def _request(
-        self, window_start: datetime, window_end: datetime, page: int, page_size: int
-    ) -> tuple[list[dict], bool]:
-        url = f"{self._base_url}/v1/orders/company/{self._external_company_id}"
-        params = {
+        self,
+        resource_path: str,
+        window_start: datetime,
+        window_end: datetime,
+        page: int,
+        page_size: int,
+        extra_params: dict[str, int | str] | None = None,
+    ) -> tuple[list[dict[str, Any]], bool]:
+        url = f"{self._base_url}/{resource_path}/company/{self._external_company_id}"
+        params: dict[str, str | int] = {
             "start_date": window_start.strftime(_DATETIME_FORMAT),
             "end_date": window_end.strftime(_DATETIME_FORMAT),
             "page": page,
             "perpage": page_size,
         }
+        if extra_params:
+            params.update(extra_params)
         headers = {"apikey": self._api_key, "Content-Type": "application/json"}
 
         try:
@@ -168,6 +210,13 @@ class VestiClient:
         if not body.get("result", {}).get("success", False):
             raise ERPClientError(f"Vesti returned an error: {body.get('result')}")
 
-        orders = body.get("response", [])
+        items = body.get("response", [])
         has_next_page = body.get("links", {}).get("next") is not None
-        return orders, has_next_page
+        return items, has_next_page
+
+
+@dataclass
+class _ResourcePage:
+    items: list[dict[str, Any]]
+    next_cursor: str | None
+    has_more: bool

@@ -13,6 +13,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/clientes': 'Clientes',
   '/recomendacoes': 'Recomendações',
   '/oraculo': 'Oráculo',
+  '/agentes': 'Agentes',
   '/configuracoes': 'Configurações',
 }
 
@@ -22,6 +23,7 @@ const PAGE_DESCRIPTIONS: Record<string, string> = {
   '/clientes': 'Segmentação RFM, histórico e ações por cliente.',
   '/recomendacoes': 'Central para recomendações por produto ou cliente.',
   '/oraculo': 'Exploração analítica em linguagem natural.',
+  '/agentes': 'Biblioteca e execução de assistentes de IA.',
   '/configuracoes': 'Perfil da empresa e gestão de integrações.',
 }
 
@@ -31,6 +33,7 @@ const MOBILE_NAV = [
   { to: '/clientes', label: 'Clientes' },
   { to: '/recomendacoes', label: 'Recomendações' },
   { to: '/oraculo', label: 'Oráculo' },
+  { to: '/agentes', label: 'Agentes' },
   { to: '/configuracoes', label: 'Configurações' },
 ]
 

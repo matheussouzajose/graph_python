@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import {
+  Bot,
   ChevronDown,
   Compass,
   Settings,
@@ -24,6 +25,11 @@ const NAV_ITEMS = [
   { to: '/clientes', label: 'Clientes', icon: Users, end: false },
   { to: '/recomendacoes', label: 'Recomendações', icon: Sparkles, end: false },
   { to: '/oraculo', label: 'Oráculo', icon: Compass, end: false },
+] as const
+
+const STANDALONE_NAV_ITEMS = [
+  { to: '/catalogo-produtos', label: 'Catálogo ERP', icon: Package, end: false },
+  { to: '/agentes', label: 'Agentes', icon: Bot, end: false },
 ] as const
 
 const SECONDARY_NAV_ITEMS = [
@@ -101,6 +107,27 @@ export function Sidebar() {
               ))}
             </div>
           ) : null}
+
+          <div className="space-y-1 pt-2">
+            {STANDALONE_NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={end}
+                className={({ isActive }) =>
+                  cn(
+                    'flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                    isActive
+                      ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-sm'
+                      : 'text-sidebar-foreground/68 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                  )
+                }
+              >
+                <Icon className="size-4" />
+                {label}
+              </NavLink>
+            ))}
+          </div>
 
           <div className="pt-2">
             {SECONDARY_NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (

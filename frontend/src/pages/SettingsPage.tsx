@@ -55,6 +55,7 @@ import {
   useBrandArchetypeProfiles,
   useCompanies,
   useCreateBrandArchetypeProfile,
+  useCreateIntegration,
   useDeleteBrandArchetypeProfile,
   useDeleteIntegration,
   useIntegrations,
@@ -207,7 +208,11 @@ export function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="integrations" className="mt-4">
-          <IntegrationsSettings integrations={integrations.data} loading={integrations.isLoading} />
+          <IntegrationsSettings
+            company={company}
+            integrations={integrations.data}
+            loading={integrations.isLoading}
+          />
         </TabsContent>
 
         <TabsContent value="brand-archetype" className="mt-4">
@@ -262,13 +267,36 @@ const SYNC_STATUS_META: Record<string, { label: string; className: string }> = {
   },
 }
 
+const RESOURCE_LABELS: Record<string, string> = {
+  orders: 'Pedidos',
+  products: 'Produtos',
+}
+
+function integrationResources(integration: Integration): string[] {
+  const resources = integration.params.resources
+  if (Array.isArray(resources)) {
+    const values = resources.filter((resource): resource is string => typeof resource === 'string')
+    return values.length > 0 ? values : ['orders']
+  }
+  return ['orders']
+}
+
+function integrationEditableParams(integration: Integration): Record<string, unknown> {
+  const params = { ...integration.params }
+  delete params.resources
+  return params
+}
+
 function IntegrationsSettings({
+  company,
   integrations,
   loading,
 }: {
+  company: Company | undefined
   integrations: Integration[] | undefined
   loading?: boolean
 }) {
+  const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<Integration | null>(null)
   const [deleting, setDeleting] = useState<Integration | null>(null)
   const deleteIntegration = useDeleteIntegration()
@@ -334,6 +362,14 @@ function IntegrationsSettings({
         title="Integrações"
         description="Atualize credenciais, parâmetros e status das conexões ERP."
         icon={PlugZap}
+        actions={
+          company ? (
+            <Button size="sm" onClick={() => setCreating(true)}>
+              <Plus className="size-4" />
+              Nova integração
+            </Button>
+          ) : null
+        }
       >
           {loading ? (
             <div className="h-48 animate-pulse rounded-lg bg-muted" />
@@ -354,6 +390,11 @@ function IntegrationsSettings({
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="truncate text-sm font-semibold">{integration.name}</h3>
                       <Badge variant="outline">{integration.provider}</Badge>
+                      {integrationResources(integration).map((resource) => (
+                        <Badge key={resource} variant="outline">
+                          {RESOURCE_LABELS[resource] ?? resource}
+                        </Badge>
+                      ))}
                       <Badge
                         variant="outline"
                         className={
@@ -389,6 +430,24 @@ function IntegrationsSettings({
                         {status?.synced_until ? formatDateTime(status.synced_until) : '—'}
                       </span>
                     </div>
+                    {status?.resource_statuses?.length ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {status.resource_statuses.map((resourceStatus) => {
+                          const resourceMeta =
+                            SYNC_STATUS_META[resourceStatus.status] ?? SYNC_STATUS_META.never_synced
+                          return (
+                            <Badge
+                              key={resourceStatus.resource}
+                              variant="outline"
+                              className={resourceMeta.className}
+                            >
+                              {RESOURCE_LABELS[resourceStatus.resource] ?? resourceStatus.resource}:{' '}
+                              {resourceMeta.label}
+                            </Badge>
+                          )
+                        })}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="flex items-center gap-2 lg:justify-end">
                     <Button
@@ -425,6 +484,11 @@ function IntegrationsSettings({
           )}
       </SectionCard>
 
+      <IntegrationCreateSheet
+        company={company ?? null}
+        open={creating}
+        onClose={() => setCreating(false)}
+      />
       <IntegrationEditSheet integration={editing} onClose={() => setEditing(null)} />
 
       <Dialog open={Boolean(deleting)} onOpenChange={(open) => !open && setDeleting(null)}>
@@ -466,6 +530,203 @@ function IntegrationsSettings({
   )
 }
 
+function IntegrationCreateSheet({
+  company,
+  open,
+  onClose,
+}: {
+  company: Company | null
+  open: boolean
+  onClose: () => void
+}) {
+  const createIntegration = useCreateIntegration()
+  const [name, setName] = useState('Vesti')
+  const [baseUrl, setBaseUrl] = useState('')
+  const [apikey, setApikey] = useState('')
+  const [backfillStartDate, setBackfillStartDate] = useState('')
+  const [windowDays, setWindowDays] = useState('28')
+  const [syncOrders, setSyncOrders] = useState(true)
+  const [syncProducts, setSyncProducts] = useState(true)
+  const [isActive, setIsActive] = useState(true)
+
+  useEffect(() => {
+    if (!open) return
+    setName('Vesti')
+    setBaseUrl('')
+    setApikey('')
+    setBackfillStartDate('')
+    setWindowDays('28')
+    setSyncOrders(true)
+    setSyncProducts(true)
+    setIsActive(true)
+  }, [open])
+
+  function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!company) return
+    const resources = [
+      ...(syncOrders ? ['orders'] : []),
+      ...(syncProducts ? ['products'] : []),
+    ]
+    if (resources.length === 0) {
+      toast.error('Selecione ao menos um recurso')
+      return
+    }
+
+    const parsedWindowDays = Number(windowDays)
+    if (!Number.isInteger(parsedWindowDays) || parsedWindowDays < 1 || parsedWindowDays > 31) {
+      toast.error('Janela inválida', {
+        description: 'Use um número inteiro entre 1 e 31 dias.',
+      })
+      return
+    }
+
+    createIntegration.mutate(
+      {
+        company_id: company.id,
+        provider: 'vesti',
+        name,
+        base_url: baseUrl,
+        configs: { apikey },
+        params: {
+          backfill_start_date: backfillStartDate,
+          window_days: parsedWindowDays,
+          resources,
+        },
+        is_active: isActive,
+      },
+      { onSuccess: onClose },
+    )
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+      <SheetContent className="overflow-y-auto data-[side=right]:w-full data-[side=right]:sm:max-w-none data-[side=right]:lg:w-[42vw]">
+        <SheetHeader>
+          <SheetTitle>Nova integração Vesti</SheetTitle>
+          <SheetDescription>
+            Cadastre a URL da API, token e quais recursos serão sincronizados.
+          </SheetDescription>
+        </SheetHeader>
+
+        <form className="space-y-4 px-4 pb-6" onSubmit={onSubmit}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="new-integration-name">Nome</Label>
+              <Input
+                id="new-integration-name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Provider</Label>
+              <Input value="vesti" disabled />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="new-integration-base-url">Base URL</Label>
+            <Input
+              id="new-integration-base-url"
+              value={baseUrl}
+              onChange={(event) => setBaseUrl(event.target.value)}
+              placeholder="https://api.exemplo.com"
+              required
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="new-integration-apikey">API key</Label>
+            <Input
+              id="new-integration-apikey"
+              type="password"
+              value={apikey}
+              onChange={(event) => setApikey(event.target.value)}
+              required
+            />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="new-integration-backfill">Início do histórico</Label>
+              <Input
+                id="new-integration-backfill"
+                type="date"
+                value={backfillStartDate}
+                onChange={(event) => setBackfillStartDate(event.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-integration-window-days">Janela em dias</Label>
+              <Input
+                id="new-integration-window-days"
+                type="number"
+                min={1}
+                max={31}
+                value={windowDays}
+                onChange={(event) => setWindowDays(event.target.value)}
+                required
+              />
+            </div>
+          </div>
+
+          <section className="space-y-3 rounded-lg border bg-card p-3 shadow-sm">
+            <h3 className="text-sm font-medium">Recursos</h3>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="flex items-center gap-2 rounded-lg border bg-muted/35 p-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={syncOrders}
+                  onChange={(event) => setSyncOrders(event.target.checked)}
+                  className="size-4 accent-primary"
+                />
+                Pedidos
+              </label>
+              <label className="flex items-center gap-2 rounded-lg border bg-muted/35 p-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={syncProducts}
+                  onChange={(event) => setSyncProducts(event.target.checked)}
+                  className="size-4 accent-primary"
+                />
+                Produtos
+              </label>
+            </div>
+          </section>
+
+          <label className="flex items-center gap-2 rounded-lg border bg-muted/35 p-3 text-sm">
+            <input
+              type="checkbox"
+              checked={isActive}
+              onChange={(event) => setIsActive(event.target.checked)}
+              className="size-4 accent-primary"
+            />
+            <Power className="size-4 text-primary" />
+            Integração ativa
+          </label>
+
+          <div className="sticky bottom-0 -mx-4 flex justify-end gap-2 border-t bg-popover/95 p-4 backdrop-blur">
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancelar
+            </Button>
+            <Button disabled={createIntegration.isPending}>
+              {createIntegration.isPending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="size-4" />
+              )}
+              Criar integração
+            </Button>
+          </div>
+        </form>
+      </SheetContent>
+    </Sheet>
+  )
+}
+
 function IntegrationEditSheet({
   integration,
   onClose,
@@ -478,6 +739,8 @@ function IntegrationEditSheet({
   const [baseUrl, setBaseUrl] = useState('')
   const [configs, setConfigs] = useState<KeyValueRow[]>(() => addEmptyRow([]))
   const [params, setParams] = useState<KeyValueRow[]>(() => addEmptyRow([]))
+  const [syncOrders, setSyncOrders] = useState(true)
+  const [syncProducts, setSyncProducts] = useState(false)
   const [isActive, setIsActive] = useState(true)
 
   useEffect(() => {
@@ -485,7 +748,10 @@ function IntegrationEditSheet({
     setName(integration.name)
     setBaseUrl(integration.base_url)
     setConfigs(objectToRows(integration.configs))
-    setParams(objectToRows(integration.params))
+    setParams(objectToRows(integrationEditableParams(integration)))
+    const resources = integrationResources(integration)
+    setSyncOrders(resources.includes('orders'))
+    setSyncProducts(resources.includes('products'))
     setIsActive(integration.is_active)
   }, [integration])
 
@@ -496,6 +762,15 @@ function IntegrationEditSheet({
     try {
       const parsedConfigs = rowsToObject(configs, 'Configs')
       const parsedParams = rowsToObject(params, 'Params')
+      const resources = [
+        ...(syncOrders ? ['orders'] : []),
+        ...(syncProducts ? ['products'] : []),
+      ]
+      if (resources.length === 0) {
+        toast.error('Selecione ao menos um recurso')
+        return
+      }
+      parsedParams.resources = resources
       updateIntegration.mutate(
         {
           id: integration.id,
@@ -578,6 +853,30 @@ function IntegrationEditSheet({
             rows={params}
             onChange={setParams}
           />
+
+          <section className="space-y-3 rounded-lg border bg-card p-3 shadow-sm">
+            <h3 className="text-sm font-medium">Recursos sincronizados</h3>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="flex items-center gap-2 rounded-lg border bg-muted/35 p-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={syncOrders}
+                  onChange={(event) => setSyncOrders(event.target.checked)}
+                  className="size-4 accent-primary"
+                />
+                Pedidos
+              </label>
+              <label className="flex items-center gap-2 rounded-lg border bg-muted/35 p-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={syncProducts}
+                  onChange={(event) => setSyncProducts(event.target.checked)}
+                  className="size-4 accent-primary"
+                />
+                Produtos
+              </label>
+            </div>
+          </section>
 
           <div className="sticky bottom-0 -mx-4 flex justify-end gap-2 border-t bg-popover/95 p-4 backdrop-blur">
             <Button type="button" variant="outline" onClick={onClose}>
