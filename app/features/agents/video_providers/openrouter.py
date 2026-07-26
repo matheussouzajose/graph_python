@@ -20,8 +20,8 @@ from typing import Any
 import httpx
 
 from app.core.config import settings
-from app.features.agents.video_providers.base import VideoJobStatus, VideoProviderError
 from app.core.logger import logger
+from app.features.agents.video_providers.base import VideoJobStatus, VideoProviderError
 
 BASE_URL = "https://openrouter.ai/api/v1/videos"
 DEFAULT_MODEL = "google/veo-3.1-lite"
@@ -49,18 +49,16 @@ class OpenRouterVideoProvider:
         size: str | None,
         seconds: str | None,
     ) -> str:
-        if not image_urls:
-            raise VideoProviderError("Selecione ao menos uma imagem de referência.")
-
         payload = {
             "model": model or DEFAULT_MODEL,
             "prompt": prompt,
             "resolution": size or DEFAULT_RESOLUTION,
             "duration": int(seconds or DEFAULT_SECONDS),
-            "input_references": [
-                {"type": "image_url", "image_url": {"url": url}} for url in image_urls
-            ],
         }
+        if image_urls:
+            payload["input_references"] = [
+                {"type": "image_url", "image_url": {"url": url}} for url in image_urls
+            ]
 
         logger.info("OpenRouterProvider", payload)
         async with httpx.AsyncClient(timeout=60.0) as client:

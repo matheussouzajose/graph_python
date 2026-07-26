@@ -13,6 +13,8 @@ diagnóstico) e devolve o perfil já estruturado, pronto pra virar um
 | Campo | Valor |
 | --- | --- |
 | `category` | `Estratégia` |
+| `tags` | `moda, marca, branding, voz_de_marca` |
+| `skills` | `arquétipos, branding, tom_de_voz` |
 | `response_format` | `json` — a saída é o `brand_archetype_profile` estruturado, não texto corrido |
 | `uses_brand_archetype` | `false` — este agente *gera* o arquétipo, não faz sentido injetar um arquétipo que ainda não existe |
 | `temperature` | `0.4` — baixa o suficiente pra não variar a classificação entre execuções parecidas, sem ficar robótico |

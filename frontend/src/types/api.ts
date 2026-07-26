@@ -296,10 +296,15 @@ export type BrandArchetypeProfileUpdateInput = Omit<
 
 export type AgentResponseFormat = 'text' | 'json'
 
-// "chat" = pergunta/resposta via LLM (comportamento original). "image_to_video"
-// submete um job de geração de vídeo a partir de uma ou mais imagens — ver
-// app/features/agents/service.py::run. Não editável depois de criado.
-export type AgentKind = 'chat' | 'image_to_video'
+// "chat" = pergunta/resposta via LLM. Os demais tipos geram mídia e não
+// suportam streaming de token.
+export type AgentKind =
+  | 'chat'
+  | 'image_to_text'
+  | 'text_to_video'
+  | 'image_to_video'
+  | 'text_to_image'
+  | 'image_to_image'
 
 // kind="image_to_video" only — qual provedor executa o job (ver
 // app/features/agents/video_providers/). "openai" (Sora) aceita só 1
@@ -341,6 +346,9 @@ export interface Agent {
   video_provider: AgentVideoProvider
   video_size: VideoSize | null
   video_seconds: VideoSeconds | null
+  image_size: string | null
+  image_quality: string | null
+  image_format: string | null
   is_active: boolean
   is_global: boolean
   created_at: string
@@ -365,11 +373,19 @@ export interface AgentCreateInput {
   video_provider?: AgentVideoProvider
   video_size?: VideoSize | null
   video_seconds?: VideoSeconds | null
+  image_size?: string | null
+  image_quality?: string | null
+  image_format?: string | null
   is_active?: boolean
   is_global?: boolean
 }
 
 export type AgentUpdateInput = Partial<Omit<AgentCreateInput, 'company_id' | 'kind'>>
+
+export interface AgentGlobalSeedResponse {
+  created: Agent[]
+  skipped: Agent[]
+}
 
 export interface AgentRunOutput {
   text: string
@@ -379,6 +395,7 @@ export interface AgentRunOutput {
   // header (never used directly as a plain <video src>), see
   // `fetchAgentRunVideo` in lib/api.ts.
   video_url: string | null
+  image_url: string | null
 }
 
 export interface AgentRunInput {

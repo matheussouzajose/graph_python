@@ -54,20 +54,21 @@ class SoraVideoProvider:
         requested width and height"), and uploaded as a
         `(filename, bytes, content_type)` tuple.
         """
-        if len(image_urls) != 1:
-            raise VideoProviderError("A Sora aceita exatamente uma imagem de referência por vídeo.")
+        if len(image_urls) > 1:
+            raise VideoProviderError("A Sora aceita no máximo uma imagem de referência por vídeo.")
 
         resolved_size = size or DEFAULT_SIZE
-        raw_bytes = await _download_image(image_urls[0])
-        fitted_bytes = await asyncio.to_thread(_fit_to_size, raw_bytes, resolved_size)
-        video = await asyncio.to_thread(
-            self._client.videos.create,
-            prompt=prompt,
-            input_reference=("reference.jpg", fitted_bytes, "image/jpeg"),
-            model=model or DEFAULT_MODEL,
-            size=resolved_size,  # type: ignore[arg-type]
-            seconds=seconds or DEFAULT_SECONDS,  # type: ignore[arg-type]
-        )
+        kwargs = {
+            "prompt": prompt,
+            "model": model or DEFAULT_MODEL,
+            "size": resolved_size,
+            "seconds": seconds or DEFAULT_SECONDS,
+        }
+        if image_urls:
+            raw_bytes = await _download_image(image_urls[0])
+            fitted_bytes = await asyncio.to_thread(_fit_to_size, raw_bytes, resolved_size)
+            kwargs["input_reference"] = ("reference.jpg", fitted_bytes, "image/jpeg")
+        video = await asyncio.to_thread(self._client.videos.create, **kwargs)
         return video.id
 
     async def get_video_status(self, job_id: str) -> VideoJobStatus:

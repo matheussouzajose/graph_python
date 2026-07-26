@@ -39,7 +39,8 @@ class AgentORM(Base):
     tags: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
     skills: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
     description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
-    # "chat" | "image_to_video" — see `AgentKind` in schemas.py. Unlike
+    # "chat" | "image_to_text" | "text_to_video" | "image_to_video" |
+    # "text_to_image" | "image_to_image" — see `AgentKind` in schemas.py. Unlike
     # `system_prompt` (data), this genuinely changes *how* the agent
     # executes — a chat completion vs. submitting a job to OpenAI's Sora
     # video API — so it's the one place agent behavior is a real code
@@ -74,6 +75,12 @@ class AgentORM(Base):
     # default at run time — see `video_providers/*.py`.
     video_size: Mapped[str | None] = mapped_column(String(20), nullable=True)
     video_seconds: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    # kind="text_to_image"/"image_to_image" only. Kept separate from
+    # `video_size` because image models use size/quality/format vocabulary,
+    # not duration/provider vocabulary.
+    image_size: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    image_quality: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    image_format: Mapped[str | None] = mapped_column(String(10), nullable=True)
     # When true, the company's brand_archetype_profile (if any) is rendered
     # into a context block and prepended to `system_prompt` at run time —
     # see `app.features.brand_archetype.formatting.format_brand_archetype_context`.

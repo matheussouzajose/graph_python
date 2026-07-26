@@ -13,6 +13,7 @@ from app.features.agents.repository import AgentRepository
 from app.features.agents.run_repository import AgentRunRepository
 from app.features.agents.schemas import (
     AgentCreate,
+    AgentGlobalSeedResponse,
     AgentResponse,
     AgentRunApplyResponse,
     AgentRunRequest,
@@ -21,6 +22,7 @@ from app.features.agents.schemas import (
     AgentUpdate,
 )
 from app.features.agents.service import (
+    AgentImageNotAvailableError,
     AgentInvalidRunInputError,
     AgentNotActiveError,
     AgentRunNotEditableError,
@@ -85,6 +87,27 @@ async def list_agents(
         current_user.company_id, limit=limit, offset=offset, category=category
     )
     return [AgentResponse.model_validate(agent) for agent in agents]
+
+
+@router.post("/global-defaults/moda-b2b", response_model=AgentGlobalSeedResponse)
+async def seed_moda_b2b_global_agents(
+    service: ServiceDep, current_user: CurrentUserDep
+) -> AgentGlobalSeedResponse:
+    """Creates the curated Moda B2B global agents from
+    `docs/agentes-moda-b2b-prompts.md`.
+
+    Idempotent by global agent name: if a global agent with the same name
+    already exists, it is returned under `skipped` instead of duplicated.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Only a company admin can seed global agents"
+        )
+    created, skipped = await service.seed_moda_b2b_global_agents(current_user.company_id)
+    return AgentGlobalSeedResponse(
+        created=[AgentResponse.model_validate(agent) for agent in created],
+        skipped=[AgentResponse.model_validate(agent) for agent in skipped],
+    )
 
 
 @router.get("/{agent_id}", response_model=AgentResponse)
@@ -287,3 +310,23 @@ async def get_agent_run_video(
         raise HTTPException(status.HTTP_409_CONFLICT, "Video not available for this run") from exc
 
     return StreamingResponse(iter([content]), media_type="video/mp4")
+
+
+@runs_router.get("/{run_id}/image")
+async def get_agent_run_image(
+    run_id: UUID, service: ServiceDep, current_user: CurrentUserDep
+) -> StreamingResponse:
+    """Proxies generated image bytes from the run output. The image itself is
+    stored as base64 in `agent_runs.output` for now; this endpoint keeps the
+    frontend contract consistent with video, which also needs authenticated
+    backend fetching instead of a public vendor URL."""
+    run = await service.get_run_for_company(run_id, current_user.company_id)
+    if run is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Agent run not found")
+
+    try:
+        content, media_type = await service.get_image_content(run)
+    except AgentImageNotAvailableError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Image not available for this run") from exc
+
+    return StreamingResponse(iter([content]), media_type=media_type)

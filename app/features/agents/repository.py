@@ -44,6 +44,9 @@ class AgentRepository:
             video_provider=data.video_provider.value,
             video_size=data.video_size,
             video_seconds=data.video_seconds,
+            image_size=data.image_size,
+            image_quality=data.image_quality,
+            image_format=data.image_format,
             is_active=data.is_active,
             is_global=data.is_global,
         )
@@ -64,6 +67,10 @@ class AgentRepository:
             AgentORM.id == agent_id,
             or_(AgentORM.company_id == company_id, AgentORM.is_global.is_(True)),
         )
+        return await self._session.scalar(stmt)
+
+    async def get_global_by_name(self, name: str) -> AgentORM | None:
+        stmt = select(AgentORM).where(AgentORM.name == name, AgentORM.is_global.is_(True))
         return await self._session.scalar(stmt)
 
     async def list_visible_to_company(

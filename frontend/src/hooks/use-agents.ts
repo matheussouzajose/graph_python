@@ -8,6 +8,7 @@ import {
   getAgentRuns,
   getAgents,
   runAgent,
+  seedModaB2BGlobalAgents,
   updateAgent,
   updateAgentRunOutput,
 } from '@/lib/api'
@@ -90,6 +91,23 @@ export function useDeleteAgent() {
       toast.success('Agente removido')
     },
     onError: (error: Error) => toast.error('Falha ao remover agente', { description: error.message }),
+  })
+}
+
+export function useSeedModaB2BGlobalAgents() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: seedModaB2BGlobalAgents,
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: agentKeys.agents })
+      const created = result.created.length
+      const skipped = result.skipped.length
+      toast.success('Agentes globais sincronizados', {
+        description: `${created} criados, ${skipped} já existiam.`,
+      })
+    },
+    onError: (error: Error) =>
+      toast.error('Falha ao criar agentes globais', { description: error.message }),
   })
 }
 

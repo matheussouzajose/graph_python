@@ -17,7 +17,11 @@ class AgentKind(StrEnum):
     just configuration."""
 
     CHAT = "chat"
+    IMAGE_TO_TEXT = "image_to_text"
+    TEXT_TO_VIDEO = "text_to_video"
     IMAGE_TO_VIDEO = "image_to_video"
+    TEXT_TO_IMAGE = "text_to_image"
+    IMAGE_TO_IMAGE = "image_to_image"
 
 
 class AgentVideoProvider(StrEnum):
@@ -57,6 +61,9 @@ class AgentCreate(BaseModel):
     video_provider: AgentVideoProvider = AgentVideoProvider.OPENAI
     video_size: str | None = Field(default=None, max_length=20)
     video_seconds: str | None = Field(default=None, max_length=5)
+    image_size: str | None = Field(default=None, max_length=20)
+    image_quality: str | None = Field(default=None, max_length=20)
+    image_format: str | None = Field(default=None, max_length=10)
     is_active: bool = True
     # Only company admins may set this true — makes the agent visible/runnable
     # (read-only) by every other company. Enforced in router.py, not here.
@@ -103,6 +110,9 @@ class AgentUpdate(BaseModel):
     video_provider: AgentVideoProvider | None = None
     video_size: str | None = Field(default=None, max_length=20)
     video_seconds: str | None = Field(default=None, max_length=5)
+    image_size: str | None = Field(default=None, max_length=20)
+    image_quality: str | None = Field(default=None, max_length=20)
+    image_format: str | None = Field(default=None, max_length=10)
     is_active: bool | None = None
     is_global: bool | None = None
 
@@ -143,18 +153,28 @@ class AgentResponse(BaseModel):
     video_provider: str
     video_size: str | None
     video_seconds: str | None
+    image_size: str | None
+    image_quality: str | None
+    image_format: str | None
     is_active: bool
     is_global: bool
     created_at: datetime
     updated_at: datetime
 
 
+class AgentGlobalSeedResponse(BaseModel):
+    created: list[AgentResponse]
+    skipped: list[AgentResponse]
+
+
 class AgentRunRequest(BaseModel):
     message: str = Field(min_length=1)
     variables: dict[str, Any] = Field(default_factory=dict)
-    # kind="image_to_video" only — how many images are accepted depends on
-    # the agent's `video_provider` (Sora: exactly one; OpenRouter: depends
-    # on the underlying model). Validated in the provider adapter, not here.
+    # Media agents use selected catalog image URLs:
+    # - image_to_video: one or more depending on `video_provider`
+    # - image_to_text: one or more images to analyze
+    # - image_to_image: one or more reference images
+    # - text_to_image/text_to_video/chat: ignored
     image_urls: list[str] = Field(default_factory=list)
 
 
@@ -166,6 +186,7 @@ class AgentRunOutput(BaseModel):
     # `video_provider` generated it (never a direct vendor URL — that may
     # require our server-side API key, e.g. Sora's).
     video_url: str | None = None
+    image_url: str | None = None
 
 
 class AgentRunResponse(BaseModel):

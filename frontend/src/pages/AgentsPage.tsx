@@ -66,6 +66,7 @@ import {
   useDeleteAgent,
   usePollAgentRun,
   useRunAgentOnce,
+  useSeedModaB2BGlobalAgents,
   useUpdateAgent,
   useUpdateAgentRunOutput,
 } from '@/hooks/use-agents'
@@ -73,7 +74,7 @@ import { useAgentRunStream } from '@/hooks/use-agent-run-stream'
 import { useProducts } from '@/hooks/use-products'
 import { useAuthUser } from '@/lib/auth-kit-core'
 import { AGENT_OUTPUT_ACTIONS, AGENT_OUTPUT_ACTION_APPLY_LABEL } from '@/lib/agent-actions'
-import { fetchAgentRunVideo } from '@/lib/api'
+import { fetchAgentRunImage, fetchAgentRunVideo } from '@/lib/api'
 import { productImages } from '@/lib/product-images'
 import { cn } from '@/lib/utils'
 import type {
@@ -100,13 +101,25 @@ const VIDEO_SIZE_OPTIONS: { value: VideoSize; label: string }[] = [
 ]
 
 const VIDEO_SECONDS_OPTIONS: VideoSeconds[] = ['4', '8', '12']
+
+const IMAGE_SIZE_OPTIONS = [
+  { value: '1024x1024', label: 'Quadrado (1024x1024)' },
+  { value: '1024x1536', label: 'Retrato (1024x1536)' },
+  { value: '1536x1024', label: 'Paisagem (1536x1024)' },
+  { value: '2048x2048', label: 'Quadrado 2K (2048x2048)' },
+  { value: '2160x3840', label: 'Retrato 4K (2160x3840)' },
+]
+
+const IMAGE_QUALITY_OPTIONS = ['low', 'medium', 'high', 'auto'] as const
+const IMAGE_FORMAT_OPTIONS = ['png', 'jpeg', 'webp'] as const
 type AgentScopeFilter = 'all' | 'mine' | 'global'
-type AgentKindFilter = 'all' | AgentKind
+type AgentKindFilter = 'all' | 'image' | 'video' | AgentKind
 type AgentStatusFilter = 'all' | 'active' | 'inactive'
 
 export function AgentsPage() {
   const authUser = useAuthUser<AuthUser>()
   const agents = useAgents()
+  const seedModaB2BGlobalAgents = useSeedModaB2BGlobalAgents()
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [editing, setEditing] = useState<Agent | 'new' | null>(null)
@@ -160,6 +173,22 @@ export function AgentsPage() {
               <Plus className="size-4" />
               Criar agente
             </Button>
+            {isAdmin ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="h-auto rounded-2xl border-white/15 bg-white/8 text-white hover:bg-white/12 hover:text-white sm:col-span-3"
+                disabled={seedModaB2BGlobalAgents.isPending}
+                onClick={() => seedModaB2BGlobalAgents.mutate()}
+              >
+                {seedModaB2BGlobalAgents.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Globe className="size-4" />
+                )}
+                Criar globais Moda B2B
+              </Button>
+            ) : null}
           </div>
         </div>
       </section>
@@ -249,7 +278,12 @@ function AgentLibrary({
     return agents.filter((agent) => {
       if (scope === 'mine' && agent.company_id !== myCompanyId) return false
       if (scope === 'global' && !agent.is_global) return false
-      if (kind !== 'all' && agent.kind !== kind) return false
+      if (
+        kind === 'image' &&
+        !['image_to_text', 'text_to_image', 'image_to_image'].includes(agent.kind)
+      ) return false
+      if (kind === 'video' && !['text_to_video', 'image_to_video'].includes(agent.kind)) return false
+      if (kind !== 'all' && kind !== 'image' && kind !== 'video' && agent.kind !== kind) return false
       if (status === 'active' && !agent.is_active) return false
       if (status === 'inactive' && agent.is_active) return false
       if (category === UNCATEGORIZED_CATEGORY && agent.category) return false
@@ -343,7 +377,8 @@ function AgentLibrary({
         <span className="mx-1 hidden h-7 w-px bg-border sm:block" />
         <SegmentButton active={kind === 'all'} onClick={() => setKind('all')}>Todos os tipos</SegmentButton>
         <SegmentButton active={kind === 'chat'} onClick={() => setKind('chat')}>Chat</SegmentButton>
-        <SegmentButton active={kind === 'image_to_video'} onClick={() => setKind('image_to_video')}>Vídeo</SegmentButton>
+        <SegmentButton active={kind === 'image'} onClick={() => setKind('image')}>Imagem</SegmentButton>
+        <SegmentButton active={kind === 'video'} onClick={() => setKind('video')}>Vídeo</SegmentButton>
         <span className="mx-1 hidden h-7 w-px bg-border sm:block" />
         <SegmentButton active={status === 'all'} onClick={() => setStatus('all')}>Qualquer status</SegmentButton>
         <SegmentButton active={status === 'active'} onClick={() => setStatus('active')}>Ativos</SegmentButton>
@@ -481,6 +516,9 @@ function AgentCard({
   mine: boolean
   onClick: () => void
 }) {
+  const isImageKind =
+    agent.kind === 'image_to_text' || agent.kind === 'text_to_image' || agent.kind === 'image_to_image'
+  const isVideoKind = agent.kind === 'text_to_video' || agent.kind === 'image_to_video'
   const outputLabel =
     AGENT_OUTPUT_ACTIONS.find((action) => action.value === agent.output_action)?.label ??
     'Resultado configurado'
@@ -496,10 +534,20 @@ function AgentCard({
         <div
           className={cn(
             'flex size-12 shrink-0 items-center justify-center rounded-2xl text-white shadow-lg transition group-hover:scale-105',
-            agent.kind === 'image_to_video' ? 'bg-violet-500 shadow-violet-500/20' : 'bg-primary shadow-primary/20',
+            isVideoKind
+              ? 'bg-violet-500 shadow-violet-500/20'
+              : isImageKind
+                ? 'bg-teal-500 shadow-teal-500/20'
+                : 'bg-primary shadow-primary/20',
           )}
         >
-          {agent.kind === 'image_to_video' ? <Video className="size-5" /> : <Bot className="size-5" />}
+          {isVideoKind ? (
+            <Video className="size-5" />
+          ) : isImageKind ? (
+            <ImageIcon className="size-5" />
+          ) : (
+            <Bot className="size-5" />
+          )}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
@@ -541,10 +589,16 @@ function AgentCard({
             {skill}
           </Badge>
         ))}
-        {agent.kind === 'image_to_video' ? (
+        {isVideoKind ? (
           <Badge variant="outline">
             <Video className="size-3" />
             Vídeo
+          </Badge>
+        ) : null}
+        {isImageKind ? (
+          <Badge variant="outline">
+            <ImageIcon className="size-3" />
+            Imagem
           </Badge>
         ) : null}
         {agent.uses_brand_archetype ? <Badge variant="outline">Usa arquétipo</Badge> : null}
@@ -558,8 +612,10 @@ function AgentCard({
         <div className="flex items-center justify-between gap-3 text-xs">
           <span className="text-muted-foreground">Formato</span>
           <span className="font-medium">
-            {agent.kind === 'image_to_video'
+            {isVideoKind
               ? `${agent.video_provider === 'openrouter' ? 'OpenRouter' : 'Sora'}`
+              : isImageKind
+                ? agent.model || 'GPT Image'
               : agent.response_format === 'json'
                 ? 'JSON'
                 : 'Texto'}
@@ -643,13 +699,18 @@ function AgentWorkspace({
   onEdit: () => void
   onDelete: () => void
 }) {
-  const isVideoKind = agent.kind === 'image_to_video'
+  const isVideoKind = agent.kind === 'text_to_video' || agent.kind === 'image_to_video'
+  const isImageToVideoKind = agent.kind === 'image_to_video'
+  const isGeneratedImageKind = agent.kind === 'text_to_image' || agent.kind === 'image_to_image'
+  const isImageKind = agent.kind === 'image_to_text' || isGeneratedImageKind
+  const isImageToImageKind = agent.kind === 'image_to_image'
+  const isImageToTextKind = agent.kind === 'image_to_text'
   const queryClient = useQueryClient()
   const runs = useAgentRuns(agent.id)
   const stream = useAgentRunStream()
   const applyRun = useApplyAgentRun()
   const updateOutput = useUpdateAgentRunOutput()
-  const runVideo = useRunAgentOnce()
+  const runMedia = useRunAgentOnce()
 
   const [message, setMessage] = useState('')
   const [showContext, setShowContext] = useState(false)
@@ -688,12 +749,59 @@ function AgentWorkspace({
     event.preventDefault()
 
     if (isVideoKind) {
-      if (selectedImageUrls.length === 0 || videoRunUnsettled) return
+      if ((isImageToVideoKind && selectedImageUrls.length === 0) || videoRunUnsettled) return
       const videoMessage = message.trim() || 'Gere um vídeo publicitário curto para este produto.'
       setViewedRun(null)
       applyRun.reset()
-      runVideo.mutate(
+      runMedia.mutate(
         { id: agent.id, data: { message: videoMessage, image_urls: selectedImageUrls } },
+        {
+          onSuccess: (run) => {
+            setViewedRun(run)
+            setMessage('')
+            queryClient.invalidateQueries({ queryKey: agentKeys.runs(agent.id) })
+          },
+        },
+      )
+      return
+    }
+
+    if (isGeneratedImageKind) {
+      const imageMessage =
+        message.trim() ||
+        (isImageToImageKind ? 'Crie uma nova imagem mantendo o produto como referência.' : '')
+      if (!imageMessage || (isImageToImageKind && selectedImageUrls.length === 0)) return
+      setViewedRun(null)
+      applyRun.reset()
+      runMedia.mutate(
+        {
+          id: agent.id,
+          data: {
+            message: imageMessage,
+            image_urls: isImageToImageKind ? selectedImageUrls : [],
+          },
+        },
+        {
+          onSuccess: (run) => {
+            setViewedRun(run)
+            setMessage('')
+            queryClient.invalidateQueries({ queryKey: agentKeys.runs(agent.id) })
+          },
+        },
+      )
+      return
+    }
+
+    if (isImageToTextKind) {
+      const imageTextMessage = message.trim() || 'Analise as imagens selecionadas.'
+      if (selectedImageUrls.length === 0) return
+      setViewedRun(null)
+      applyRun.reset()
+      runMedia.mutate(
+        {
+          id: agent.id,
+          data: { message: imageTextMessage, image_urls: selectedImageUrls },
+        },
         {
           onSuccess: (run) => {
             setViewedRun(run)
@@ -746,7 +854,13 @@ function AgentWorkspace({
               <ArrowLeft className="size-4" />
             </Button>
             <div className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-white text-slate-950 shadow-lg shadow-black/20">
-              {isVideoKind ? <Video className="size-5" /> : <Bot className="size-5" />}
+              {isVideoKind ? (
+                <Video className="size-5" />
+              ) : isImageKind ? (
+                <ImageIcon className="size-5" />
+              ) : (
+                <Bot className="size-5" />
+              )}
             </div>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -847,17 +961,23 @@ function AgentWorkspace({
               onSubmit={onSubmit}
               className="space-y-2.5 rounded-3xl border bg-card/88 p-3 shadow-sm shadow-slate-950/[0.035] transition focus-within:border-primary/40 focus-within:shadow-lg"
             >
-              {isVideoKind ? (
+              {isImageToVideoKind || isImageToImageKind || isImageToTextKind ? (
                 <div className="space-y-2.5">
                   <CatalogImagePicker
                     value={selectedImageUrls}
                     onChange={setSelectedImageUrls}
-                    maxImages={agent.video_provider === 'openai' ? 1 : undefined}
+                    maxImages={isImageToVideoKind && agent.video_provider === 'openai' ? 1 : undefined}
                   />
                   <Textarea
                     value={message}
                     onChange={(event) => setMessage(event.target.value)}
-                    placeholder="Instruções extras para este vídeo (opcional)"
+                    placeholder={
+                      isVideoKind
+                        ? 'Instruções extras para este vídeo (opcional)'
+                        : isImageToTextKind
+                          ? 'O que você quer analisar nessas imagens? (opcional)'
+                          : 'Descreva a edição, variação ou cena desejada'
+                    }
                     rows={2}
                     className="resize-none border-0 bg-transparent shadow-none focus-visible:ring-0"
                   />
@@ -878,14 +998,18 @@ function AgentWorkspace({
                 />
               )}
 
-              {!isVideoKind && showContext ? (
+              {!isVideoKind && !isImageKind && showContext ? (
                 <ExtraContextEditor rows={contextRows} onChange={setContextRows} />
               ) : null}
 
               <div className="flex items-center justify-between gap-2 border-t pt-2.5">
-                {isVideoKind ? (
+                {isVideoKind || isImageKind ? (
                   <span className="text-xs text-muted-foreground">
-                    A geração leva alguns minutos.
+                    {isVideoKind
+                      ? 'A geração leva alguns minutos.'
+                      : isImageToTextKind
+                        ? 'A análise será gerada nesta execução.'
+                        : 'A imagem será gerada nesta execução.'}
                   </span>
                 ) : (
                   <Button
@@ -899,19 +1023,26 @@ function AgentWorkspace({
                   </Button>
                 )}
                 <div className="flex items-center gap-3">
-                  {isVideoKind ? (
+                  {isVideoKind || isImageKind ? (
                     <Button
                       type="submit"
                       disabled={
-                        selectedImageUrls.length === 0 || runVideo.isPending || videoRunUnsettled
+                        (isImageToVideoKind && selectedImageUrls.length === 0) ||
+                        (isImageToImageKind && selectedImageUrls.length === 0) ||
+                        (isImageToTextKind && selectedImageUrls.length === 0) ||
+                        (isGeneratedImageKind && !isImageToImageKind && !message.trim()) ||
+                        runMedia.isPending ||
+                        videoRunUnsettled
                       }
                     >
-                      {runVideo.isPending || videoRunUnsettled ? (
+                      {runMedia.isPending || videoRunUnsettled ? (
                         <Loader2 className="size-4 animate-spin" />
+                      ) : isImageKind ? (
+                        <ImageIcon className="size-4" />
                       ) : (
                         <Video className="size-4" />
                       )}
-                      Gerar vídeo
+                      {isVideoKind ? 'Gerar vídeo' : isImageToTextKind ? 'Analisar imagem' : 'Gerar imagem'}
                     </Button>
                   ) : (
                     <>
@@ -942,10 +1073,11 @@ function AgentWorkspace({
             </p>
           ) : null}
 
-          {displayedText || stream.isStreaming || (isVideoKind && displayedRun) ? (
+          {displayedText || stream.isStreaming || ((isVideoKind || isImageKind) && displayedRun) ? (
             <ResultCard
               agentName={agent.name}
               isVideoKind={isVideoKind}
+              isImageKind={isGeneratedImageKind}
               text={displayedText}
               isStreaming={stream.isStreaming}
               run={displayedRun}
@@ -1001,6 +1133,7 @@ function AgentWorkspace({
 function ResultCard({
   agentName,
   isVideoKind,
+  isImageKind,
   text,
   isStreaming,
   run,
@@ -1018,6 +1151,7 @@ function ResultCard({
 }: {
   agentName: string
   isVideoKind: boolean
+  isImageKind: boolean
   text: string
   isStreaming: boolean
   run: AgentRun | null
@@ -1069,7 +1203,7 @@ function ResultCard({
               </Badge>
             ) : null}
           </div>
-          {!isStreaming && run && !isEditing && !isVideoKind ? (
+          {!isStreaming && run && !isEditing && !isVideoKind && !isImageKind ? (
             <div className="flex items-center gap-1">
               <Button variant="ghost" size="icon-xs" onClick={copyText}>
                 <Copy className="size-3.5" />
@@ -1089,6 +1223,15 @@ function ResultCard({
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" />
               Gerando vídeo… isso pode levar alguns minutos.
+            </div>
+          )
+        ) : isImageKind ? (
+          run?.output?.image_url ? (
+            <RunImagePreview runId={run.id} />
+          ) : run?.status === 'failed' ? null : (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" />
+              Gerando imagem…
             </div>
           )
         ) : isEditing ? (
@@ -1210,6 +1353,47 @@ function RunVideoPlayer({ runId }: { runId: string }) {
     )
   }
   return <video controls src={blobUrl} className="w-full max-w-64 rounded-lg border bg-black" />
+}
+
+function RunImagePreview({ runId }: { runId: string }) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let objectUrl: string | null = null
+    let cancelled = false
+    setLoading(true)
+    setFailed(false)
+    fetchAgentRunImage(runId)
+      .then((blob) => {
+        if (cancelled) return
+        objectUrl = URL.createObjectURL(blob)
+        setBlobUrl(objectUrl)
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [runId])
+
+  if (loading) return <div className="aspect-[3/4] w-full max-w-sm animate-pulse rounded-lg bg-muted" />
+  if (failed || !blobUrl) {
+    return <p className="text-sm text-destructive">Não foi possível carregar a imagem.</p>
+  }
+  return (
+    <img
+      src={blobUrl}
+      alt="Imagem gerada pelo agente"
+      className="w-full max-w-sm rounded-lg border bg-muted object-contain"
+    />
+  )
 }
 
 type ProductImageOption = {
@@ -1626,6 +1810,9 @@ function AgentEditSheet({
   const [videoProvider, setVideoProvider] = useState<AgentVideoProvider>('openai')
   const [videoSize, setVideoSize] = useState<VideoSize>('720x1280')
   const [videoSeconds, setVideoSeconds] = useState<VideoSeconds>('8')
+  const [imageSize, setImageSize] = useState('1024x1536')
+  const [imageQuality, setImageQuality] = useState('medium')
+  const [imageFormat, setImageFormat] = useState('png')
 
   useEffect(() => {
     if (!open) return
@@ -1647,10 +1834,15 @@ function AgentEditSheet({
     setVideoProvider(agent?.video_provider ?? 'openai')
     setVideoSize(agent?.video_size ?? '720x1280')
     setVideoSeconds(agent?.video_seconds ?? '8')
+    setImageSize(agent?.image_size ?? '1024x1536')
+    setImageQuality(agent?.image_quality ?? 'medium')
+    setImageFormat(agent?.image_format ?? 'png')
     setShowAdvanced(false)
   }, [open, agent])
 
-  const isVideoKind = kind === 'image_to_video'
+  const isVideoKind = kind === 'text_to_video' || kind === 'image_to_video'
+  const isGeneratedImageKind = kind === 'text_to_image' || kind === 'image_to_image'
+  const isImageKind = kind === 'image_to_text' || isGeneratedImageKind
 
   function handleProviderChange(next: AgentVideoProvider) {
     setVideoProvider(next)
@@ -1684,13 +1876,16 @@ function AgentEditSheet({
       system_prompt: systemPrompt,
       kind,
       model: model || null,
-      temperature: isVideoKind ? 0.3 : temperatureValue,
+      temperature: isVideoKind || isImageKind ? 0.3 : temperatureValue,
       uses_brand_archetype: usesBrandArchetype,
-      response_format: isVideoKind ? 'text' : responseFormat,
-      output_action: isVideoKind ? 'none' : outputAction,
+      response_format: isVideoKind || isImageKind ? 'text' : responseFormat,
+      output_action: isVideoKind || isImageKind ? 'none' : outputAction,
       video_provider: isVideoKind ? videoProvider : 'openai',
       video_size: isVideoKind ? videoSize : null,
       video_seconds: isVideoKind ? videoSeconds : null,
+      image_size: isGeneratedImageKind ? imageSize : null,
+      image_quality: isGeneratedImageKind ? imageQuality : null,
+      image_format: isGeneratedImageKind ? imageFormat : null,
       is_active: isActive,
       is_global: isGlobal,
     }
@@ -1802,6 +1997,10 @@ function AgentEditSheet({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="chat">Conversa (pergunta e resposta)</SelectItem>
+                <SelectItem value="image_to_text">Imagem → texto</SelectItem>
+                <SelectItem value="text_to_video">Texto → vídeo</SelectItem>
+                <SelectItem value="text_to_image">Texto → imagem</SelectItem>
+                <SelectItem value="image_to_image">Imagem → imagem</SelectItem>
                 <SelectItem value="image_to_video">Imagem → vídeo</SelectItem>
               </SelectContent>
             </Select>
@@ -1836,7 +2035,7 @@ function AgentEditSheet({
 
           <div className="space-y-2 rounded-3xl border bg-card/82 p-4 shadow-sm">
             <Label htmlFor="agent-system-prompt">
-              {isVideoKind ? 'Direção criativa base' : 'Como o agente deve se comportar'}
+              {isVideoKind || isImageKind ? 'Direção criativa base' : 'Como o agente deve se comportar'}
             </Label>
             <Textarea
               id="agent-system-prompt"
@@ -1846,6 +2045,8 @@ function AgentEditSheet({
               placeholder={
                 isVideoKind
                   ? 'O que toda geração deste agente deve seguir: estilo de câmera, iluminação, o que preservar do produto...'
+                  : isImageKind
+                    ? 'O que toda geração deste agente deve seguir: estética, fidelidade do produto, fundo, luz, composição...'
                   : 'Você é um agente que...'
               }
               required
@@ -1943,6 +2144,54 @@ function AgentEditSheet({
                 </div>
               )}
             </>
+          ) : isGeneratedImageKind ? (
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="space-y-2">
+                <Label>Tamanho da imagem</Label>
+                <Select value={imageSize} onValueChange={setImageSize}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {IMAGE_SIZE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Qualidade</Label>
+                <Select value={imageQuality} onValueChange={setImageQuality}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {IMAGE_QUALITY_OPTIONS.map((quality) => (
+                      <SelectItem key={quality} value={quality}>
+                        {quality}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Formato</Label>
+                <Select value={imageFormat} onValueChange={setImageFormat}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {IMAGE_FORMAT_OPTIONS.map((format) => (
+                      <SelectItem key={format} value={format}>
+                        {format}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           ) : (
             <div className="space-y-2">
               <Label>O que fazer com o resultado</Label>
@@ -1972,9 +2221,9 @@ function AgentEditSheet({
               className="size-4 accent-primary"
             />
             Usar o arquétipo de marca da empresa como contexto
-            {isVideoKind ? (
+            {isVideoKind || isImageKind ? (
               <span className="text-xs text-muted-foreground">
-                (entra no prompt de geração do vídeo)
+                (entra no prompt de geração)
               </span>
             ) : null}
           </label>
@@ -2033,11 +2282,13 @@ function AgentEditSheet({
                         ? videoProvider === 'openai'
                           ? 'sora-2 (padrão)'
                           : 'google/veo-3.1 (padrão)'
+                        : isGeneratedImageKind
+                          ? 'gpt-image-2 (padrão)'
                         : 'padrão'
                     }
                   />
                 </div>
-                {!isVideoKind ? (
+                {!isVideoKind && !isImageKind ? (
                   <>
                     <div className="space-y-2">
                       <Label htmlFor="agent-temperature">Temperatura</Label>

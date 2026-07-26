@@ -1,6 +1,7 @@
 import type {
   Agent,
   AgentCreateInput,
+  AgentGlobalSeedResponse,
   AgentRun,
   AgentRunApplyResponse,
   AgentRunRequestInput,
@@ -204,6 +205,9 @@ export const updateAgent = (agentId: string, data: AgentUpdateInput) =>
 export const deleteAgent = (agentId: string) =>
   request<void>(`/agents/${agentId}`, { method: 'DELETE' })
 
+export const seedModaB2BGlobalAgents = () =>
+  request<AgentGlobalSeedResponse>('/agents/global-defaults/moda-b2b', { method: 'POST' })
+
 export const runAgent = (agentId: string, data: AgentRunRequestInput) =>
   request<AgentRun>(`/agents/${agentId}/run`, { method: 'POST', body: JSON.stringify(data) })
 
@@ -231,6 +235,21 @@ export async function fetchAgentRunVideo(runId: string): Promise<Blob> {
   })
   if (!response.ok) {
     throw new ApiError(response.status, `Erro ${response.status} ao baixar vídeo`)
+  }
+  return response.blob()
+}
+
+/**
+ * Generated image runs expose bytes at `GET /agent-runs/{id}/image`, fetched
+ * through the API so authorization stays server-side-consistent with video.
+ */
+export async function fetchAgentRunImage(runId: string): Promise<Blob> {
+  const token = getStoredAccessToken()
+  const response = await fetch(`${BASE_URL}/agent-runs/${runId}/image`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!response.ok) {
+    throw new ApiError(response.status, `Erro ${response.status} ao baixar imagem`)
   }
   return response.blob()
 }

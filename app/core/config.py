@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     OPENAI_EMBEDDING_MODEL: str = Field(
         "text-embedding-3-small", description="OpenAI embedding model for indexing/retrieval."
     )
+    OPENAI_IMAGE_MODEL: str = Field(
+        "gpt-image-2", description="OpenAI image model for text/image-to-image agents."
+    )
     OPENAI_EMBEDDING_DIMENSIONS: int = Field(
         1536,
         description=(
