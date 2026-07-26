@@ -3,7 +3,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class AgentResponseFormat(StrEnum):
@@ -43,6 +43,8 @@ class AgentCreate(BaseModel):
     company_id: UUID
     name: str = Field(min_length=1, max_length=255)
     category: str | None = Field(default=None, max_length=100)
+    tags: list[str] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)
     description: str | None = Field(default=None, max_length=1000)
     kind: AgentKind = AgentKind.CHAT
     usage_instructions: str | None = None
@@ -60,6 +62,19 @@ class AgentCreate(BaseModel):
     # (read-only) by every other company. Enforced in router.py, not here.
     is_global: bool = False
 
+    @field_validator("tags", "skills")
+    @classmethod
+    def normalize_metadata_list(cls, values: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            item = value.strip()
+            if not item or item in seen:
+                continue
+            normalized.append(item)
+            seen.add(item)
+        return normalized
+
 
 class AgentUpdate(BaseModel):
     """`company_id` and `kind` are intentionally not editable — switching
@@ -75,6 +90,8 @@ class AgentUpdate(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=255)
     category: str | None = Field(default=None, max_length=100)
+    tags: list[str] | None = None
+    skills: list[str] | None = None
     description: str | None = Field(default=None, max_length=1000)
     usage_instructions: str | None = None
     system_prompt: str | None = Field(default=None, min_length=1)
@@ -89,6 +106,21 @@ class AgentUpdate(BaseModel):
     is_active: bool | None = None
     is_global: bool | None = None
 
+    @field_validator("tags", "skills")
+    @classmethod
+    def normalize_metadata_list(cls, values: list[str] | None) -> list[str] | None:
+        if values is None:
+            return None
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            item = value.strip()
+            if not item or item in seen:
+                continue
+            normalized.append(item)
+            seen.add(item)
+        return normalized
+
 
 class AgentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -97,6 +129,8 @@ class AgentResponse(BaseModel):
     company_id: UUID
     name: str
     category: str | None
+    tags: list[str]
+    skills: list[str]
     description: str | None
     kind: str
     usage_instructions: str | None

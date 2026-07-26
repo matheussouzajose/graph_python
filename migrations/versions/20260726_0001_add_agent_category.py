@@ -18,9 +18,15 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     op.add_column('agents', sa.Column('category', sa.String(length=100), nullable=True))
+    op.add_column('agents', sa.Column('tags', sa.ARRAY(sa.String()), nullable=False, server_default='{}'))
+    op.add_column('agents', sa.Column('skills', sa.ARRAY(sa.String()), nullable=False, server_default='{}'))
+    op.alter_column('agents', 'tags', server_default=None)
+    op.alter_column('agents', 'skills', server_default=None)
     op.create_index('ix_agents_category', 'agents', ['category'])
 
 
 def downgrade() -> None:
     op.drop_index('ix_agents_category', table_name='agents')
+    op.drop_column('agents', 'skills')
+    op.drop_column('agents', 'tags')
     op.drop_column('agents', 'category')

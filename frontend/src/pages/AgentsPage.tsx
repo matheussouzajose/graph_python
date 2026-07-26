@@ -262,6 +262,8 @@ function AgentLibrary({
       return [
         agent.name,
         agent.category,
+        ...(agent.tags ?? []),
+        ...(agent.skills ?? []),
         agent.description,
         agent.usage_instructions,
         agent.system_prompt,
@@ -458,6 +460,18 @@ function SegmentButton({
   )
 }
 
+function parseMetadataList(value: string): string[] {
+  const seen = new Set<string>()
+  const items: string[] = []
+  for (const part of value.split(/[,\n]/)) {
+    const item = part.trim()
+    if (!item || seen.has(item)) continue
+    seen.add(item)
+    items.push(item)
+  }
+  return items
+}
+
 function AgentCard({
   agent,
   mine,
@@ -517,6 +531,16 @@ function AgentCard({
         </Badge>
         <Badge variant="outline">{mine ? 'Seu agente' : 'Compartilhado'}</Badge>
         {agent.category ? <Badge variant="outline">{agent.category}</Badge> : null}
+        {(agent.tags ?? []).slice(0, 3).map((tag) => (
+          <Badge key={`tag-${tag}`} variant="secondary">
+            #{tag}
+          </Badge>
+        ))}
+        {(agent.skills ?? []).slice(0, 2).map((skill) => (
+          <Badge key={`skill-${skill}`} variant="outline">
+            {skill}
+          </Badge>
+        ))}
         {agent.kind === 'image_to_video' ? (
           <Badge variant="outline">
             <Video className="size-3" />
@@ -745,6 +769,24 @@ function AgentWorkspace({
                     {agent.category}
                   </Badge>
                 ) : null}
+                {(agent.tags ?? []).map((tag) => (
+                  <Badge
+                    key={`tag-${tag}`}
+                    variant="outline"
+                    className="border-white/10 bg-white/[0.08] text-white"
+                  >
+                    #{tag}
+                  </Badge>
+                ))}
+                {(agent.skills ?? []).map((skill) => (
+                  <Badge
+                    key={`skill-${skill}`}
+                    variant="outline"
+                    className="border-white/10 bg-white/[0.08] text-white"
+                  >
+                    {skill}
+                  </Badge>
+                ))}
               </div>
               {agent.description ? (
                 <p className="mt-1 max-w-2xl text-sm leading-6 text-white/58">{agent.description}</p>
@@ -1567,6 +1609,8 @@ function AgentEditSheet({
 
   const [name, setName] = useState('')
   const [category, setCategory] = useState('')
+  const [tags, setTags] = useState('')
+  const [skills, setSkills] = useState('')
   const [description, setDescription] = useState('')
   const [kind, setKind] = useState<AgentKind>('chat')
   const [usageInstructions, setUsageInstructions] = useState('')
@@ -1587,6 +1631,8 @@ function AgentEditSheet({
     if (!open) return
     setName(agent?.name ?? '')
     setCategory(agent?.category ?? '')
+    setTags((agent?.tags ?? []).join(', '))
+    setSkills((agent?.skills ?? []).join(', '))
     setDescription(agent?.description ?? '')
     setKind(agent?.kind ?? 'chat')
     setUsageInstructions(agent?.usage_instructions ?? '')
@@ -1631,6 +1677,8 @@ function AgentEditSheet({
     const payload = {
       name,
       category: category.trim() || null,
+      tags: parseMetadataList(tags),
+      skills: parseMetadataList(skills),
       description: description || null,
       usage_instructions: usageInstructions || null,
       system_prompt: systemPrompt,
@@ -1712,6 +1760,34 @@ function AgentEditSheet({
               placeholder="ex: Marketing, Conteúdo, Vídeo"
               maxLength={100}
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="agent-tags">Tags</Label>
+            <Textarea
+              id="agent-tags"
+              value={tags}
+              onChange={(event) => setTags(event.target.value)}
+              placeholder="fashion, ecommerce, catalogo, publicidade"
+              className="min-h-20"
+            />
+            <p className="text-xs text-muted-foreground">
+              Separe por vírgula ou quebra de linha.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="agent-skills">Skills</Label>
+            <Textarea
+              id="agent-skills"
+              value={skills}
+              onChange={(event) => setSkills(event.target.value)}
+              placeholder="direção_criativa, fotografia, storyboard, campanhas"
+              className="min-h-20"
+            />
+            <p className="text-xs text-muted-foreground">
+              Capacidades que ajudam a encontrar e organizar o agente.
+            </p>
           </div>
 
           <div className="space-y-2">

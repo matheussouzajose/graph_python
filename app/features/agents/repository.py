@@ -30,6 +30,8 @@ class AgentRepository:
             company_id=data.company_id,
             name=data.name,
             category=data.category,
+            tags=data.tags,
+            skills=data.skills,
             description=data.description,
             kind=data.kind.value,
             usage_instructions=data.usage_instructions,

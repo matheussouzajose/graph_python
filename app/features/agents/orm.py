@@ -16,7 +16,7 @@ the "owned" vs "visible" query split.
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, String, Text, func
+from sqlalchemy import ARRAY, Boolean, DateTime, Float, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.infrastructure.database.base import Base
@@ -32,6 +32,12 @@ class AgentORM(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Lightweight metadata for discovery/filtering in the agent library.
+    # `category` is the broad shelf ("Marketing", "Vídeo", ...), while tags
+    # and skills describe domain/context ("ecommerce", "fashion") and
+    # capability ("storyboard", "campanhas").
+    tags: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
+    skills: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
     description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     # "chat" | "image_to_video" — see `AgentKind` in schemas.py. Unlike
     # `system_prompt` (data), this genuinely changes *how* the agent
