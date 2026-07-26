@@ -93,8 +93,7 @@ async def list_agents(
 async def seed_moda_b2b_global_agents(
     service: ServiceDep, current_user: CurrentUserDep
 ) -> AgentGlobalSeedResponse:
-    """Creates the curated Moda B2B global agents from
-    `docs/agentes-moda-b2b-prompts.md`.
+    """Creates the curated Moda B2B global agents embedded in the backend.
 
     Idempotent by global agent name: if a global agent with the same name
     already exists, it is returned under `skipped` instead of duplicated.
